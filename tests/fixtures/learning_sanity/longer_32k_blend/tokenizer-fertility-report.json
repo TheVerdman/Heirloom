@@ -1,0 +1,56 @@
+{
+  "command": "tokenizer fertility",
+  "status": "passed",
+  "blend_id": "fixture-qb-tokenizer-hardpath",
+  "sample_manifest_hash": "sha256:sample-fixture",
+  "sampled_bytes": 1048576,
+  "tokenizer": {
+    "tokenizer_id": "heirloom-byte-bpe-32768-v2",
+    "tokenizer_path": "tokenizer.json",
+    "format": "heirloom.byte_bpe",
+    "version": 2,
+    "vocab_size": 32768,
+    "tokenizer_hash": "sha256:tokenizer-fixture",
+    "artifact_hash": "sha256:artifact-fixture",
+    "source_blend_hash": "sha256:blend-fixture",
+    "sample_manifest_hash": "sha256:sample-fixture",
+    "reserved_tokens": 128,
+    "reserved_registry_hash": "sha256:reserved-fixture",
+    "training_config": {
+      "target_vocab_size": 32768,
+      "sample_bytes": 1048576,
+      "seed": 1107,
+      "memory_limit_bytes": null,
+      "source_blend_hash": "sha256:blend-fixture",
+      "sample_manifest_hash": "sha256:sample-fixture",
+      "trainer": "heirloom.byte_bpe.native_incremental.v2.digit_isolated",
+      "digit_isolation": true
+    },
+    "validation": {
+      "training_bytes": 1048576,
+      "weighted_training_bytes": 1048576,
+      "training_sequences": 128,
+      "reserved_tokens": 128,
+      "byte_token_count": 256,
+      "learned_merge_count": 32384,
+      "byte_coverage": 1.0,
+      "artifact_hash": "sha256:artifact-fixture",
+      "initial_unique_sequences": 1024,
+      "initial_pair_count": 4096,
+      "final_pair_count": 2048
+    }
+  },
+  "sources": [
+    {
+      "source_id": "allenai.dolma.v1_7.fixture",
+      "sampled_bytes": 4096,
+      "tokens": 2048,
+      "tokens_per_byte": 0.5,
+      "bytes_per_token": 2.0,
+      "byte_token_share": 0.25,
+      "reserved_token_hits": 0,
+      "records": 2,
+      "tokens_per_record": 1024.0
+    }
+  ]
+}

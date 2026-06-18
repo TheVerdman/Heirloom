@@ -1,0 +1,31 @@
+{
+  "command": "train-lm",
+  "model_family": "tiny_transformer",
+  "distributed": "nccl",
+  "precision": "amp-bf16",
+  "learning_rate": 0.001,
+  "world_size": 4,
+  "devices": ["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
+  "per_rank_batch_size": 2,
+  "global_batch_size": 8,
+  "grad_accumulation_steps": 1,
+  "per_rank_effective_batch_size": 2,
+  "global_micro_batch_size": 8,
+  "global_effective_batch_size": 8,
+  "initial_loss": 4.0,
+  "final_loss": 3.0,
+  "loss_reduction": 0.25,
+  "rank_loss_reductions": [0.25, 0.25, 0.25, 0.25],
+  "all_reduce_calls": 8,
+  "all_reduce_bytes": 4096,
+  "loader": {
+    "kind": "binary_shard_streaming"
+  },
+  "performance": {
+    "tokens_seen": 1024,
+    "micro_batch_size": 2,
+    "grad_accumulation_steps": 1,
+    "data_parallel_world_size": 4,
+    "global_effective_batch_size": 8
+  }
+}

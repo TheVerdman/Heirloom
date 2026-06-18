@@ -1,0 +1,12 @@
+{
+  "format": "heirloom.padawan.smft_access_counts",
+  "version": 0,
+  "episode_id": "padawan_fixture_000001",
+  "memory_slots": 1024,
+  "foreground_rows": [42, 91, 314],
+  "background_rows": [7, 42, 100],
+  "foreground_background_lift": 4.5,
+  "replay_jaccard_overlap": 0.34,
+  "per_episode_row_cap": 32,
+  "task_family_row_cap": 128
+}

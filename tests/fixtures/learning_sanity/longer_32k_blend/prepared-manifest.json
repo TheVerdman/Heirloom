@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "storage": "binary_shards",
+  "tokenizer_path": "tokenizer.json",
+  "sources": [],
+  "shards": [],
+  "train_tokens_path": "",
+  "valid_tokens_path": "",
+  "train_tokens": 3686,
+  "valid_tokens": 410,
+  "train_hash": "sha256:train-fixture",
+  "valid_hash": "sha256:valid-fixture"
+}

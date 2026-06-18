@@ -1,0 +1,30 @@
+{
+  "format": "heirloom.learning_sanity_lr_grad_accumulation_sweep",
+  "version": 0,
+  "runs": [
+    {
+      "label": "lr-0.001-ga-1",
+      "report": "run-lr-0.001-ga-1.json",
+      "expected_learning_rate": 0.001,
+      "expected_grad_accumulation_steps": 1
+    },
+    {
+      "label": "lr-0.001-ga-2",
+      "report": "run-lr-0.001-ga-2.json",
+      "expected_learning_rate": 0.001,
+      "expected_grad_accumulation_steps": 2
+    },
+    {
+      "label": "lr-0.0005-ga-1",
+      "report": "run-lr-0.0005-ga-1.json",
+      "expected_learning_rate": 0.0005,
+      "expected_grad_accumulation_steps": 1
+    },
+    {
+      "label": "lr-0.0005-ga-2",
+      "report": "run-lr-0.0005-ga-2.json",
+      "expected_learning_rate": 0.0005,
+      "expected_grad_accumulation_steps": 2
+    }
+  ]
+}

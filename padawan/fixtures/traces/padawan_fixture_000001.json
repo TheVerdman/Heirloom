@@ -1,0 +1,27 @@
+{
+  "format": "heirloom.padawan_trace",
+  "version": 0,
+  "episode_id": "padawan_fixture_000001",
+  "task_understanding": "Create a minimal sidecar Padawan episode that exercises the validator contract.",
+  "assumptions": [
+    "The current 20B-token pretraining readiness path must remain unchanged.",
+    "A standard-library validator is preferable for the first build slice."
+  ],
+  "compressed_rationale": "Use a tiny fixture with explicit references and hashes so the loop can validate provenance before any model training is attempted.",
+  "subgoals": [
+    "Define raw episode metadata.",
+    "Attach teacher, trace, rationale, artifact, verifier, and memory refs.",
+    "Validate artifact hashes and SMFT eligibility evidence."
+  ],
+  "tool_calls": [],
+  "observations": [
+    "Existing tokenizer reserved tokens already cover traces, tools, evidence, memory, and SMFT."
+  ],
+  "failed_checks": [],
+  "repairs": [],
+  "final_validation": {
+    "validator": "heirloom padawan validate",
+    "expected": "passes"
+  },
+  "final_artifact_ref": "artifact://padawan/artifacts/padawan_fixture_000001.diff"
+}

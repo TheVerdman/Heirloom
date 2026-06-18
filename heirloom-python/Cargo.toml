@@ -1,0 +1,18 @@
+[package]
+name = "heirloom-python"
+version = "0.1.0"
+edition = "2021"
+description = "Thin PyO3 bindings for Heirloom parity testing."
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "heirloom_py"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+heirloom = { path = ".." }
+pyo3 = { version = "0.27", default-features = false, features = ["macros"] }

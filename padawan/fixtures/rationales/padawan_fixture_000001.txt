@@ -1,0 +1,1 @@
+This fixture keeps the first Padawan build narrow: validate source records, provenance, hashes, hidden-test audit metadata, and SMFT evidence before introducing any training path.

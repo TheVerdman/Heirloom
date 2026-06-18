@@ -1,0 +1,18 @@
+{
+  "format": "heirloom.learning_sanity_ladder",
+  "version": 0,
+  "stages": [
+    {
+      "stage_id": "longer_32k_blend",
+      "report": "longer_32k_blend/summary.json",
+      "expected_command": "train-memory-lm",
+      "expected_model_family": "memory_transformer",
+      "expected_loader_kind": "binary_shard_streaming",
+      "min_loss_reduction": 0.1,
+      "min_final_step": 64,
+      "min_selected_tokens": 4096,
+      "min_selected_docs": 5,
+      "min_blend_sources": 5
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "command": "train-lm",
+  "model_family": "tiny_transformer",
+  "initial_loss": 4.0,
+  "final_loss": 3.0,
+  "loss_reduction": 0.25,
+  "loader": {
+    "kind": "binary_shard_streaming"
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "format": "heirloom.padawan_artifact_bundle",
+  "version": 0,
+  "episode_id": "padawan_fixture_000001",
+  "artifacts": [
+    {
+      "name": "teacher_brief",
+      "ref": "artifact://padawan/briefs/padawan_fixture_000001.txt",
+      "media_type": "text/plain",
+      "sha256": "sha256:469d18a9a41e9be3d8b955944ae5dff8f14b7a2ac2072fab3710888664c81df9",
+      "bytes": 450
+    },
+    {
+      "name": "trace",
+      "ref": "artifact://padawan/traces/padawan_fixture_000001.json",
+      "media_type": "application/json",
+      "sha256": "sha256:a3c304760b99e5c044182e69f0ab5b9f7031b03f301c8d8a3b249cfa1b30a434",
+      "bytes": 1109
+    },
+    {
+      "name": "compressed_rationale",
+      "ref": "artifact://padawan/rationales/padawan_fixture_000001.txt",
+      "media_type": "text/plain",
+      "sha256": "sha256:930772024863af8354323f354d31ab72f96c8d4ecf2d4400815745d466a5436d",
+      "bytes": 180
+    },
+    {
+      "name": "artifact_diff",
+      "ref": "artifact://padawan/artifacts/padawan_fixture_000001.diff",
+      "media_type": "text/x-diff",
+      "sha256": "sha256:30aba4ab0cfa068f32e959e036e37715dc334a5c21babc66ffefa9a6223569fd",
+      "bytes": 240
+    },
+    {
+      "name": "final_response",
+      "ref": "artifact://padawan/finals/padawan_fixture_000001.txt",
+      "media_type": "text/plain",
+      "sha256": "sha256:1e11d29e629ab68c1c9355ac00fd8547c0fb82f3b9292d156f450c1f62a9f65e",
+      "bytes": 110
+    },
+    {
+      "name": "memory_selection",
+      "ref": "artifact://padawan/memory/padawan_fixture_000001-selection.json",
+      "media_type": "application/json",
+      "sha256": "sha256:2b632973521b2e6ddb7df8a2e508610359c55b06f51f44087480a60a61d6236f",
+      "bytes": 245
+    },
+    {
+      "name": "smft_access_counts",
+      "ref": "artifact://padawan/memory/padawan_fixture_000001-counts.json",
+      "media_type": "application/json",
+      "sha256": "sha256:f4fc7be220558c3e2e4bfce2461ce7f419a829f1ba314e371540eab3862fe2ff",
+      "bytes": 337
+    },
+    {
+      "name": "verifier_result",
+      "ref": "artifact://padawan/verifiers/padawan_fixture_000001-result.json",
+      "media_type": "application/json",
+      "sha256": "sha256:975c8761c27a1c1612e68fb764f4084468fb28d0d62a0e0a6c94f7d4b7874b77",
+      "bytes": 523
+    }
+  ],
+  "restricted_audit": {
+    "verifier_pack_id": "heirloom.padawan.fixture.v0.20260611",
+    "verifier_pack_hash": "sha256:ebaf24445e40ad300a3590e5ff029b63e2d3124650a5abbcf6b2ef756967ed7c",
+    "public_verifier_hash": "sha256:cb83eb925411c75d7aee8fd3ad84b1496d04c7e2435d8bc9feb3fee5b75ac880",
+    "hidden_verifier_hash": "sha256:de87f08fbcc3bfc8116ef23fc7dab8f57ee894b4d3e0470b1280b7aef89a1723",
+    "hidden_case_ids_hmac": [
+      "hmac-sha256:28ec2f4d7d058eb3e4e54a672154fa0c7957001c86d5a961c1dc8637e71bf2eb"
+    ],
+    "artifact_hashes": {
+      "teacher_brief": "sha256:469d18a9a41e9be3d8b955944ae5dff8f14b7a2ac2072fab3710888664c81df9",
+      "trace": "sha256:a3c304760b99e5c044182e69f0ab5b9f7031b03f301c8d8a3b249cfa1b30a434",
+      "compressed_rationale": "sha256:930772024863af8354323f354d31ab72f96c8d4ecf2d4400815745d466a5436d",
+      "artifact_diff": "sha256:30aba4ab0cfa068f32e959e036e37715dc334a5c21babc66ffefa9a6223569fd",
+      "final_response": "sha256:1e11d29e629ab68c1c9355ac00fd8547c0fb82f3b9292d156f450c1f62a9f65e",
+      "memory_selection": "sha256:2b632973521b2e6ddb7df8a2e508610359c55b06f51f44087480a60a61d6236f",
+      "smft_access_counts": "sha256:f4fc7be220558c3e2e4bfce2461ce7f419a829f1ba314e371540eab3862fe2ff",
+      "verifier_result": "sha256:975c8761c27a1c1612e68fb764f4084468fb28d0d62a0e0a6c94f7d4b7874b77"
+    },
+    "result_digest": "sha256:975c8761c27a1c1612e68fb764f4084468fb28d0d62a0e0a6c94f7d4b7874b77",
+    "restricted_bundle_ref": "artifact://restricted/padawan/verifiers/heirloom.padawan.fixture.v0.20260611"
+  }
+}

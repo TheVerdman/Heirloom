@@ -1,0 +1,11 @@
+Mission: validate the first Padawan sidecar contract without changing the pretraining path.
+
+Constraints:
+- Keep all files under padawan/ or scripts/.
+- Use existing reserved-token concepts.
+- Prove compressed rationale, artifact hashing, hidden-test audit metadata, and SMFT evidence are representable.
+
+Rubric:
+- The episode JSONL validates.
+- Referenced artifacts are content-addressed.
+- Teacher text is context only and masked from target loss.

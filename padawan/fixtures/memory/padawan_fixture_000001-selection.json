@@ -1,0 +1,12 @@
+{
+  "format": "heirloom.padawan.memory_selection",
+  "version": 0,
+  "episode_id": "padawan_fixture_000001",
+  "memory_slots": 1024,
+  "layers": {
+    "layer_8": {
+      "selected_rows": [42, 91, 314],
+      "selected_row_events": 8
+    }
+  }
+}

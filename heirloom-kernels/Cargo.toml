@@ -1,0 +1,10 @@
+[package]
+name = "heirloom-kernels"
+version = "0.1.0"
+edition = "2021"
+description = "Audited unsafe CPU kernel wrappers for Heirloom."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+matrixmultiply = "0.3"
+rayon = "1.10"

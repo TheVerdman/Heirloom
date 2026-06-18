@@ -1,0 +1,1 @@
+Validated the Padawan sidecar contract with a tiny fixture and no changes to the production pretraining path.

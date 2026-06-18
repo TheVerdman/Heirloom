@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://heirloom.local/schemas/padawan_verifier_result_v0.schema.json",
+  "title": "Heirloom Padawan Verifier Result v0",
+  "type": "object",
+  "required": [
+    "verifier_id",
+    "verifier_pack_hash",
+    "tests_passed",
+    "schema_valid",
+    "reward",
+    "reward_components",
+    "failure_class"
+  ],
+  "properties": {
+    "verifier_id": { "type": "string" },
+    "verifier_pack_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "tests_passed": { "type": "boolean" },
+    "schema_valid": { "type": "boolean" },
+    "hidden_tests_passed": { "type": "boolean" },
+    "unrelated_changes": { "type": "integer", "minimum": 0 },
+    "reward": { "type": "number" },
+    "reward_components": { "type": "object" },
+    "failure_class": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}

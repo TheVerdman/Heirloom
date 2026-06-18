@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "mode": "smoke",
+  "production_gate": false,
+  "materialize_mode": "sample",
+  "target_tokens": 4096,
+  "selected_tokens": 4096,
+  "selected_docs": 8,
+  "tokenizer_version": 2,
+  "tokenizer_vocab_size": 32768,
+  "reserved_tokens": 128,
+  "manifest_version": 2,
+  "manifest_storage": "binary_shards",
+  "loader_kind": "binary_shard_streaming",
+  "tokens_materialized": false,
+  "artifacts": {
+    "corpus_blend": "corpus-blend.json",
+    "tokenizer": "tokenizer.json",
+    "tokenizer_report": "tokenizer-train-report.json",
+    "fertility_report": "tokenizer-fertility-report.json",
+    "curation_report": "curation-report.json",
+    "source_index": "source-index.json",
+    "selected_docs": "selected-docs.jsonl",
+    "dataset_manifest": "prepared-manifest.json",
+    "train_report": "train-report.json",
+    "resume_report": "resume-report.json",
+    "eval_report": "eval-report.json",
+    "generation_report": "generation-report.json"
+  },
+  "performance": {
+    "tokens_seen": 8192
+  }
+}

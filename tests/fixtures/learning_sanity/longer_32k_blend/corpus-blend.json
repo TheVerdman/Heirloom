@@ -1,0 +1,29 @@
+{
+  "format": "heirloom.corpus_blend",
+  "version": 1,
+  "blend_id": "fixture-qb-tokenizer-hardpath",
+  "tokenizer_target_vocab_size": 32768,
+  "tokenizer_family": "heirloom.byte_bpe",
+  "sources": [
+    {
+      "source_id": "allenai.dolma.v1_7.fixture",
+      "include_in_pretraining": true
+    },
+    {
+      "source_id": "nvidia.nemotron_cc.high_actual.fixture",
+      "include_in_pretraining": true
+    },
+    {
+      "source_id": "allenai.dolma3_dolmino_mix-100B-1125.fixture",
+      "include_in_pretraining": true
+    },
+    {
+      "source_id": "nvidia.nemotron_cc_math.fixture",
+      "include_in_pretraining": true
+    },
+    {
+      "source_id": "vecl_qb.synthetic.v1-hard.fixture",
+      "include_in_pretraining": true
+    }
+  ]
+}

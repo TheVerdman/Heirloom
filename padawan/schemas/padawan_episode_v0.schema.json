@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://heirloom.local/schemas/padawan_episode_v0.schema.json",
+  "title": "Heirloom Padawan Episode v0",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "episode_id",
+    "source_id",
+    "created_at",
+    "checkpoint_ref",
+    "task",
+    "teacher",
+    "padawan",
+    "verifier",
+    "memory",
+    "selection"
+  ],
+  "properties": {
+    "format": { "const": "heirloom.padawan_episode" },
+    "version": { "const": 0 },
+    "episode_id": { "type": "string", "pattern": "^padawan_[A-Za-z0-9_.-]+$" },
+    "source_id": { "type": "string", "pattern": "^heirloom\\.padawan\\.v0\\." },
+    "created_at": { "type": "string", "format": "date-time" },
+    "checkpoint_ref": { "type": "string" },
+    "task": {
+      "type": "object",
+      "required": ["domain", "task_kind", "prompt", "artifact_type", "difficulty"],
+      "properties": {
+        "domain": { "type": "string" },
+        "task_kind": { "type": "string" },
+        "prompt": { "type": "string" },
+        "artifact_type": { "type": "string" },
+        "difficulty": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "additionalProperties": true
+    },
+    "teacher": { "$ref": "padawan_teacher_brief_v0.schema.json" },
+    "padawan": {
+      "type": "object",
+      "required": [
+        "model",
+        "trace_ref",
+        "compressed_rationale_ref",
+        "artifact_ref",
+        "artifact_bundle_ref",
+        "final_response_ref"
+      ],
+      "properties": {
+        "model": { "type": "string" },
+        "trace_ref": { "type": "string" },
+        "compressed_rationale_ref": { "type": "string" },
+        "artifact_ref": { "type": "string" },
+        "artifact_bundle_ref": { "type": "string" },
+        "final_response_ref": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "verifier": { "$ref": "padawan_verifier_result_v0.schema.json" },
+    "memory": {
+      "type": "object",
+      "required": ["selection_report_ref", "smft_access_counts_ref", "smft_mask_ref"],
+      "properties": {
+        "selection_report_ref": { "type": ["string", "null"] },
+        "smft_access_counts_ref": { "type": ["string", "null"] },
+        "smft_mask_ref": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "selection": {
+      "type": "object",
+      "required": [
+        "eligible_for_sft",
+        "eligible_for_preference",
+        "eligible_for_rlvr_replay",
+        "eligible_for_smft",
+        "requires_teacherless_replay",
+        "sft_weight"
+      ],
+      "properties": {
+        "eligible_for_sft": { "type": "boolean" },
+        "eligible_for_preference": { "type": "boolean" },
+        "eligible_for_rlvr_replay": { "type": "boolean" },
+        "eligible_for_smft": { "type": "boolean" },
+        "requires_teacherless_replay": { "type": "boolean" },
+        "teacherless_replay_episode_id": { "type": ["string", "null"] },
+        "sft_weight": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

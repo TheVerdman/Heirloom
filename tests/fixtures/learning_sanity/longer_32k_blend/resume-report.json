@@ -1,0 +1,33 @@
+{
+  "command": "train-memory-lm",
+  "model_family": "memory_transformer",
+  "start_step": 64,
+  "final_step": 72,
+  "initial_loss": 8.6,
+  "final_loss": 8.4,
+  "loss_reduction": 0.023255813953488372,
+  "loader": {
+    "kind": "binary_shard_streaming",
+    "tokens_materialized": false
+  },
+  "tokenizer": {
+    "tokenizer_id": "heirloom-byte-bpe-32768-v2",
+    "version": 2,
+    "vocab_size": 32768,
+    "tokenizer_hash": "sha256:tokenizer-fixture",
+    "artifact_hash": "sha256:artifact-fixture",
+    "source_blend_hash": "sha256:blend-fixture",
+    "sample_manifest_hash": "sha256:sample-fixture",
+    "reserved_tokens": 128,
+    "reserved_registry_hash": "sha256:reserved-fixture",
+    "training_config": {
+      "target_vocab_size": 32768,
+      "digit_isolation": true
+    },
+    "validation": {
+      "reserved_tokens": 128,
+      "byte_token_count": 256,
+      "byte_coverage": 1.0
+    }
+  }
+}

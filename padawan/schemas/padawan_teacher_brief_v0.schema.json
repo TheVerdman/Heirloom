@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://heirloom.local/schemas/padawan_teacher_brief_v0.schema.json",
+  "title": "Heirloom Padawan Teacher Brief v0",
+  "type": "object",
+  "required": [
+    "model",
+    "guidance_level",
+    "guidance_policy",
+    "brief_ref",
+    "teacher_tokens_masked_from_loss",
+    "forbidden_outputs_checked"
+  ],
+  "properties": {
+    "model": { "type": "string" },
+    "guidance_level": { "type": "integer", "minimum": 0, "maximum": 4 },
+    "guidance_policy": {
+      "type": "object",
+      "required": ["difficulty_band", "distance_proxy"],
+      "properties": {
+        "difficulty_band": { "type": "string" },
+        "distance_proxy": { "type": "string" },
+        "over_guidance_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "additionalProperties": true
+    },
+    "brief_ref": { "type": ["string", "null"] },
+    "teacher_tokens_masked_from_loss": { "const": true },
+    "forbidden_outputs_checked": { "const": true }
+  },
+  "additionalProperties": true
+}

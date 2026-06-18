@@ -1,0 +1,14 @@
+{
+  "format": "heirloom.learning_sanity_ladder",
+  "version": 0,
+  "stages": [
+    {
+      "stage_id": "dense_fixed_shard",
+      "report": "dense-train-report.json",
+      "expected_command": "train-lm",
+      "expected_model_family": "tiny_transformer",
+      "expected_loader_kind": "binary_shard_streaming",
+      "min_loss_reduction": 0.2
+    }
+  ]
+}

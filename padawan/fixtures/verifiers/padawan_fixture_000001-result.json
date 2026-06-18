@@ -1,0 +1,18 @@
+{
+  "format": "heirloom.padawan.verifier_result",
+  "version": 0,
+  "episode_id": "padawan_fixture_000001",
+  "verifier_id": "heirloom.padawan.fixture.v0",
+  "verifier_pack_hash": "sha256:ebaf24445e40ad300a3590e5ff029b63e2d3124650a5abbcf6b2ef756967ed7c",
+  "tests_passed": true,
+  "schema_valid": true,
+  "hidden_tests_passed": true,
+  "unrelated_changes": 0,
+  "reward": 1.6,
+  "reward_components": {
+    "schema_valid": 1.0,
+    "artifact_hashes_valid": 0.3,
+    "smft_evidence_valid": 0.3
+  },
+  "failure_class": null
+}

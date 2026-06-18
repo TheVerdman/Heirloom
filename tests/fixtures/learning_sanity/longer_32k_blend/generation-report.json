@@ -1,0 +1,29 @@
+{
+  "command": "generate-memory-lm",
+  "model_family": "memory_transformer",
+  "prompt": "<|user|>Summarize the QB tokenizer hard path.<|message_end|><|assistant|>",
+  "decoded_text": "The QB tokenizer hard path uses a governed blend and manifest v2 shards.",
+  "prompt_tokens": 12,
+  "generated_tokens": 16,
+  "total_tokens": 28,
+  "tokenizer": {
+    "tokenizer_id": "heirloom-byte-bpe-32768-v2",
+    "version": 2,
+    "vocab_size": 32768,
+    "tokenizer_hash": "sha256:tokenizer-fixture",
+    "artifact_hash": "sha256:artifact-fixture",
+    "source_blend_hash": "sha256:blend-fixture",
+    "sample_manifest_hash": "sha256:sample-fixture",
+    "reserved_tokens": 128,
+    "reserved_registry_hash": "sha256:reserved-fixture",
+    "training_config": {
+      "target_vocab_size": 32768,
+      "digit_isolation": true
+    },
+    "validation": {
+      "reserved_tokens": 128,
+      "byte_token_count": 256,
+      "byte_coverage": 1.0
+    }
+  }
+}
