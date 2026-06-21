@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 pub const PAD_ID: usize = 0;
 pub const BOS_ID: usize = 1;
@@ -1212,6 +1213,7 @@ fn train_bpe_merges_incremental(
     reserved_tokens: &[ReservedToken],
     min_pair_count: u64,
 ) -> Result<(Vec<Vec<u8>>, Vec<BpeMerge>, BpeTrainerStats)> {
+    let progress_every_merges = tokenizer_train_progress_every_merges();
     let mut id_to_bytes = initial_id_to_bytes(reserved_tokens);
     let initial_unique_sequences = sequences.len();
     let mut words = sequences
@@ -1252,7 +1254,21 @@ fn train_bpe_merges_incremental(
         max_heap_len: heap.len(),
         ..BpeTrainerStats::default()
     };
+    log_bpe_trainer_progress(
+        "start",
+        id_to_bytes.len(),
+        vocab_size,
+        0,
+        pair_counts.len(),
+        heap.len(),
+        &stats,
+        None,
+        Duration::ZERO,
+    );
 
+    let progress_start = Instant::now();
+    let mut last_progress_merge_count = 0usize;
+    let mut last_progress_elapsed = Duration::ZERO;
     let mut merges = Vec::new();
     while id_to_bytes.len() < vocab_size {
         let Some(candidate) = pop_current_best_pair(&mut heap, &pair_counts, &mut stats) else {
@@ -1321,10 +1337,94 @@ fn train_bpe_merges_incremental(
             words[word_id].tokens = new_tokens;
         }
         maybe_rebuild_pair_heap(&mut heap, &pair_counts, &mut stats);
+        if should_log_bpe_trainer_progress(
+            merges.len(),
+            last_progress_merge_count,
+            progress_every_merges,
+            progress_start.elapsed(),
+            last_progress_elapsed,
+        ) {
+            last_progress_merge_count = merges.len();
+            last_progress_elapsed = progress_start.elapsed();
+            log_bpe_trainer_progress(
+                "progress",
+                id_to_bytes.len(),
+                vocab_size,
+                merges.len(),
+                pair_counts.len(),
+                heap.len(),
+                &stats,
+                Some(candidate.count),
+                last_progress_elapsed,
+            );
+        }
     }
 
     stats.final_pair_count = pair_counts.len();
+    log_bpe_trainer_progress(
+        "done",
+        id_to_bytes.len(),
+        vocab_size,
+        merges.len(),
+        pair_counts.len(),
+        heap.len(),
+        &stats,
+        None,
+        progress_start.elapsed(),
+    );
     Ok((id_to_bytes, merges, stats))
+}
+
+fn tokenizer_train_progress_every_merges() -> usize {
+    std::env::var("HEIRLOOM_TOKENIZER_TRAIN_PROGRESS_EVERY_MERGES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(1_000)
+}
+
+fn should_log_bpe_trainer_progress(
+    merges: usize,
+    last_logged_merges: usize,
+    every_merges: usize,
+    elapsed: Duration,
+    last_logged_elapsed: Duration,
+) -> bool {
+    if every_merges > 0 && merges.saturating_sub(last_logged_merges) >= every_merges {
+        return true;
+    }
+    elapsed
+        .checked_sub(last_logged_elapsed)
+        .is_some_and(|delta| delta >= Duration::from_secs(60))
+}
+
+fn log_bpe_trainer_progress(
+    stage: &str,
+    vocab_size: usize,
+    target_vocab_size: usize,
+    merges: usize,
+    pair_count: usize,
+    heap_len: usize,
+    stats: &BpeTrainerStats,
+    selected_pair_count: Option<u64>,
+    elapsed: Duration,
+) {
+    eprintln!(
+        "[tokenizer-train] stage={} vocab={}/{} merges={} pair_count={} heap_len={} heap_pops={} stale_heap_pops={} heap_rebuilds={} affected_word_updates={} selected_pair_count={} elapsed_secs={:.1}",
+        stage,
+        vocab_size,
+        target_vocab_size,
+        merges,
+        pair_count,
+        heap_len,
+        stats.heap_pops,
+        stats.stale_heap_pops,
+        stats.heap_rebuilds,
+        stats.affected_word_updates,
+        selected_pair_count
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "n/a".to_string()),
+        elapsed.as_secs_f64(),
+    );
 }
 
 fn pop_current_best_pair(
@@ -1509,11 +1609,14 @@ fn byte_segments_for_bpe<'a>(
         }
         return byte_segments_split_digits(bytes);
     }
+    let reserved_tokens_by_first_byte = reserved_tokens_by_first_byte(reserved_tokens);
     let mut segments = Vec::new();
     let mut index = 0usize;
     let mut start = 0usize;
     while index < bytes.len() {
-        if let Some((_, len)) = match_reserved_registry(reserved_tokens, bytes, index) {
+        if let Some((_, len)) =
+            match_reserved_registry_indexed(&reserved_tokens_by_first_byte, bytes, index)
+        {
             if start < index {
                 push_bpe_segment(&mut segments, &bytes[start..index], digit_isolation);
             }
@@ -1534,6 +1637,25 @@ fn byte_segments_for_bpe<'a>(
         push_bpe_segment(&mut segments, &bytes[start..], digit_isolation);
     }
     segments
+}
+
+fn reserved_tokens_by_first_byte(reserved_tokens: &[ReservedToken]) -> [Vec<&ReservedToken>; 256] {
+    let mut indexed: [Vec<&ReservedToken>; 256] = std::array::from_fn(|_| Vec::new());
+    for token in reserved_tokens {
+        if let Some(&first) = token.token.as_bytes().first() {
+            indexed[first as usize].push(token);
+        }
+    }
+    for candidates in indexed.iter_mut() {
+        candidates.sort_by(|left, right| {
+            right
+                .token
+                .len()
+                .cmp(&left.token.len())
+                .then_with(|| left.id.cmp(&right.id))
+        });
+    }
+    indexed
 }
 
 fn push_bpe_segment<'a>(segments: &mut Vec<&'a [u8]>, segment: &'a [u8], digit_isolation: bool) {
@@ -1566,21 +1688,19 @@ fn byte_segments_split_digits(bytes: &[u8]) -> Vec<&[u8]> {
     segments
 }
 
-fn match_reserved_registry(
-    reserved_tokens: &[ReservedToken],
+fn match_reserved_registry_indexed(
+    reserved_tokens_by_first_byte: &[Vec<&ReservedToken>; 256],
     bytes: &[u8],
     index: usize,
 ) -> Option<(usize, usize)> {
-    reserved_tokens
-        .iter()
-        .filter_map(|token| {
-            let needle = token.token.as_bytes();
-            if needle.is_empty() || index + needle.len() > bytes.len() {
-                return None;
-            }
-            (bytes[index..index + needle.len()] == *needle).then_some((token.id, needle.len()))
-        })
-        .max_by_key(|(id, len)| (*len, std::cmp::Reverse(*id)))
+    let candidates = reserved_tokens_by_first_byte[bytes[index] as usize].as_slice();
+    for token in candidates {
+        let needle = token.token.as_bytes();
+        if index + needle.len() <= bytes.len() && bytes[index..index + needle.len()] == *needle {
+            return Some((token.id, needle.len()));
+        }
+    }
+    None
 }
 
 fn reserved_token_id(tokens: &[ReservedToken], id: usize) -> Option<usize> {

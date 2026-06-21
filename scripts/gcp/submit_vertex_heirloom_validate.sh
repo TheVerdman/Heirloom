@@ -336,6 +336,9 @@ def main() -> int:
     run_learning_sanity_fixtures = (
         os.environ.get("HEIRLOOM_RUN_LEARNING_SANITY_FIXTURES", "0") == "1"
     )
+    run_learning_sanity_sweep = (
+        os.environ.get("HEIRLOOM_RUN_LEARNING_SANITY_SWEEP", "0") == "1"
+    )
     work_root = pathlib.Path("/tmp/heirloom-vertex-work")
     source_tgz = work_root / "heirloom-source.tar.gz"
     source_dir = work_root / "src"
@@ -382,6 +385,8 @@ def main() -> int:
     qb_tokenizer_hardpath_report_uris: list[str] = []
     qb_tokenizer_hardpath_checkpoint_prefix: str | None = None
     learning_sanity_fixture_report_uris: list[str] = []
+    learning_sanity_sweep_report_uris: list[str] = []
+    learning_sanity_sweep_recommendation: dict[str, object] | None = None
 
     def upload_diagnostic(path: pathlib.Path, relative: str) -> str | None:
         if not path.exists():
@@ -404,6 +409,10 @@ def main() -> int:
             diagnostic_log_uris.append(uri)
             uploaded.append(uri)
         return uploaded
+
+    def write_worker_json(path: pathlib.Path, value: object) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
     if require_gpu:
         if collect_gpu_topology:
@@ -1296,6 +1305,10 @@ def main() -> int:
                 "HEIRLOOM_QB_TOKENIZER_HARDPATH_TARGET_TOKENS",
                 "HEIRLOOM_QB_TOKENIZER_HARDPATH_MATERIALIZE_MODE",
                 "HEIRLOOM_QB_TOKENIZER_HARDPATH_SEED",
+                "HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_PATH",
+                "HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_MANIFEST",
+                "HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_SELECTED_DOCS",
+                "HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_ONLY",
                 "HEIRLOOM_QB_TOKENIZER_HARDPATH_VALID_FRACTION",
                 "HEIRLOOM_QB_TOKENIZER_SOURCE_STAGE_DIR",
                 "HEIRLOOM_QB_TOKENIZER_HARDPATH_DEVICE",
@@ -1334,6 +1347,10 @@ def main() -> int:
                 "HEIRLOOM_QB_TOKENIZER_NEMOTRON_CC_MATH_PATH",
                 "HEIRLOOM_QB_TOKENIZER_QB_V1_HARD_PATH",
                 "HEIRLOOM_NCCL_NET_PLUGIN",
+                "HEIRLOOM_NCCL_CUMEM_ENABLE",
+                "HEIRLOOM_NCCL_CUMEM_HOST_ENABLE",
+                "HEIRLOOM_NCCL_P2P_DISABLE",
+                "HEIRLOOM_NCCL_P2P_LEVEL",
                 "HEIRLOOM_REQUIRE_TENSOR_CORES",
                 "HEIRLOOM_REQUIRE_ATTENTION_TENSOR_CORES",
                 "HEIRLOOM_CUDA_TENSOR_CORE_GLOBAL_CTA_GEMM",
@@ -1465,6 +1482,363 @@ def main() -> int:
                     upload_gcs(report_path, report_uri)
                     learning_sanity_fixture_report_uris.append(report_uri)
 
+    if run_learning_sanity_sweep:
+        sweep_dir = work_root / "learning-sanity-sweep"
+        sweep_dir.mkdir(parents=True, exist_ok=True)
+        sweep_logs_dir = sweep_dir / "logs"
+        sweep_logs_dir.mkdir(parents=True, exist_ok=True)
+        corpus_path = sweep_dir / "fixed-shard.txt"
+        tokenizer_path = sweep_dir / "tokenizer.json"
+        prepared_dir = sweep_dir / "prepared"
+        sweep_manifest = sweep_dir / "lr-grad-sweep.json"
+        sweep_recommendation = sweep_dir / "lr-recommendation.json"
+        ladder_manifest = sweep_dir / "learning-sanity-ladder.json"
+        validation_report = sweep_dir / "learning-sanity-validation.json"
+
+        def parse_csv_floats(name: str, default: str) -> list[float]:
+            values = [
+                float(item.strip())
+                for item in os.environ.get(name, default).split(",")
+                if item.strip()
+            ]
+            if not values:
+                raise ValueError(f"{name} must contain at least one value")
+            return values
+
+        def parse_csv_ints(name: str, default: str) -> list[int]:
+            values = [
+                int(item.strip())
+                for item in os.environ.get(name, default).split(",")
+                if item.strip()
+            ]
+            if not values:
+                raise ValueError(f"{name} must contain at least one value")
+            if any(value <= 0 for value in values):
+                raise ValueError(f"{name} values must be positive")
+            return values
+
+        learning_rates = parse_csv_floats("HEIRLOOM_LEARNING_SANITY_SWEEP_LRS", "0.01,0.005")
+        grad_accumulations = parse_csv_ints(
+            "HEIRLOOM_LEARNING_SANITY_SWEEP_GRAD_ACCUMULATION_STEPS",
+            "1,2",
+        )
+        sweep_steps = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_STEPS", "48")
+        batch_size = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_BATCH", "2")
+        block_size = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_BLOCK", "8")
+        d_model = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_D_MODEL", "16")
+        n_heads = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_HEADS", "2")
+        ff_hidden = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_FF", "32")
+        vocab_size = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_VOCAB", "280")
+        shard_tokens = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_SHARD_TOKENS", "512")
+        seed = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_SEED", "7")
+        devices_value = os.environ.get(
+            "HEIRLOOM_LEARNING_SANITY_SWEEP_DEVICES",
+            "cuda:0,cuda:1,cuda:2,cuda:3",
+        )
+        distributed = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_DISTRIBUTED", "nccl")
+        precision = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_PRECISION", "amp-bf16")
+        log_every = os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_LOG_EVERY", sweep_steps)
+        ddp_init_timeout = os.environ.get(
+            "HEIRLOOM_LEARNING_SANITY_SWEEP_DDP_INIT_TIMEOUT_SECS",
+            "180",
+        )
+        ddp_checksum_every = os.environ.get(
+            "HEIRLOOM_LEARNING_SANITY_SWEEP_DDP_CHECKSUM_EVERY",
+            "16",
+        )
+        min_loss_reduction = float(
+            os.environ.get("HEIRLOOM_LEARNING_SANITY_SWEEP_MIN_LOSS_REDUCTION", "0.0")
+        )
+        min_best_loss_reduction_raw = os.environ.get(
+            "HEIRLOOM_LEARNING_SANITY_SWEEP_MIN_BEST_LOSS_REDUCTION",
+            UNSET_SENTINEL,
+        )
+        min_best_loss_reduction = (
+            None
+            if min_best_loss_reduction_raw in ("", UNSET_SENTINEL)
+            else float(min_best_loss_reduction_raw)
+        )
+
+        sweep_env = env.copy()
+        if enable_nccl_debug and distributed == "nccl":
+            sweep_env.setdefault("NCCL_DEBUG", "INFO")
+            sweep_env.setdefault("NCCL_DEBUG_SUBSYS", "INIT,COLL,GRAPH")
+            sweep_env.setdefault("HEIRLOOM_NCCL_TRACE", "1")
+        for name in [
+            "HEIRLOOM_NCCL_NET_PLUGIN",
+            "HEIRLOOM_NCCL_SOCKET_IFNAME",
+            "HEIRLOOM_NCCL_IB_DISABLE",
+            "HEIRLOOM_NCCL_CUMEM_ENABLE",
+            "HEIRLOOM_NCCL_CUMEM_HOST_ENABLE",
+            "HEIRLOOM_NCCL_P2P_DISABLE",
+            "HEIRLOOM_NCCL_P2P_LEVEL",
+            "HEIRLOOM_NCCL_DEBUG",
+            "HEIRLOOM_NCCL_DEBUG_SUBSYS",
+            "HEIRLOOM_NCCL_TRACE",
+        ]:
+            value = os.environ.get(name)
+            if value and value != UNSET_SENTINEL:
+                sweep_env[name] = value
+
+        corpus_lines = []
+        for _ in range(128):
+            corpus_lines.append("alpha beta gamma delta. alpha beta gamma delta. ")
+            corpus_lines.append("memory slots learn stable rows. exact lookup follows evidence. ")
+            corpus_lines.append("one plus one is two. two plus two is four. ")
+            corpus_lines.append("red blue green yellow. stable batches reduce loss. ")
+        corpus_path.write_text("".join(corpus_lines), encoding="utf-8")
+
+        sweep_runs: list[dict[str, object]] = []
+        sweep_run_summaries: list[dict[str, object]] = []
+        try:
+            run_to_file(
+                [
+                    "cargo",
+                    "run",
+                    "--bin",
+                    "heirloom",
+                    "--",
+                    "tokenizer",
+                    "train",
+                    "--input",
+                    str(corpus_path),
+                    "--out",
+                    str(tokenizer_path),
+                    "--vocab-size",
+                    vocab_size,
+                ],
+                sweep_logs_dir / "tokenizer-train.txt",
+                cwd=source_dir,
+                env=sweep_env,
+            )
+            run_to_file(
+                [
+                    "cargo",
+                    "run",
+                    "--bin",
+                    "heirloom",
+                    "--",
+                    "data",
+                    "prepare",
+                    "--input",
+                    str(corpus_path),
+                    "--tokenizer",
+                    str(tokenizer_path),
+                    "--out-dir",
+                    str(prepared_dir),
+                    "--format",
+                    "binary-shard",
+                    "--valid-fraction",
+                    "0.25",
+                    "--shard-tokens",
+                    shard_tokens,
+                ],
+                sweep_logs_dir / "data-prepare.txt",
+                cwd=source_dir,
+                env=sweep_env,
+            )
+            for learning_rate in learning_rates:
+                for grad_accumulation in grad_accumulations:
+                    label = (
+                        f"lr-{learning_rate:g}-ga-{grad_accumulation}"
+                        .replace(".", "p")
+                        .replace("-", "m")
+                    )
+                    run_dir = sweep_dir / label
+                    report_path = run_dir / "report.json"
+                    checkpoint_dir = run_dir / "checkpoint"
+                    run_to_file(
+                        [
+                            "cargo",
+                            "run",
+                            "--bin",
+                            "heirloom",
+                            "--",
+                            "train-lm",
+                            "--dataset-manifest",
+                            str(prepared_dir / "manifest.json"),
+                            "--checkpoint",
+                            str(checkpoint_dir),
+                            "--steps",
+                            sweep_steps,
+                            "--batch-size",
+                            batch_size,
+                            "--grad-accumulation-steps",
+                            str(grad_accumulation),
+                            "--block-size",
+                            block_size,
+                            "--d-model",
+                            d_model,
+                            "--n-heads",
+                            n_heads,
+                            "--ff-hidden",
+                            ff_hidden,
+                            "--lr",
+                            f"{learning_rate:g}",
+                            "--seed",
+                            seed,
+                            "--precision",
+                            precision,
+                            "--devices",
+                            devices_value,
+                            "--distributed",
+                            distributed,
+                            "--ddp-init-timeout-secs",
+                            ddp_init_timeout,
+                            "--ddp-checksum-every",
+                            ddp_checksum_every,
+                            "--log-every",
+                            log_every,
+                            "--report",
+                            str(report_path),
+                        ],
+                        sweep_logs_dir / f"{label}.txt",
+                        cwd=source_dir,
+                        env=sweep_env,
+                    )
+                    sweep_runs.append(
+                        {
+                            "label": f"lr-{learning_rate:g}-ga-{grad_accumulation}",
+                            "report": report_path.relative_to(sweep_dir).as_posix(),
+                            "expected_learning_rate": learning_rate,
+                            "expected_grad_accumulation_steps": grad_accumulation,
+                        }
+                    )
+                    report = json.loads(report_path.read_text(encoding="utf-8"))
+                    performance = report.get("performance", {})
+                    sweep_run_summaries.append(
+                        {
+                            "label": f"lr-{learning_rate:g}-ga-{grad_accumulation}",
+                            "report": report_path.relative_to(sweep_dir).as_posix(),
+                            "learning_rate": float(report["learning_rate"]),
+                            "grad_accumulation_steps": int(
+                                report["grad_accumulation_steps"]
+                            ),
+                            "initial_loss": float(report["initial_loss"]),
+                            "final_loss": float(report["final_loss"]),
+                            "loss_reduction": float(report["loss_reduction"]),
+                            "global_effective_batch_size": int(
+                                report["global_effective_batch_size"]
+                            ),
+                            "tokens_seen": int(performance.get("tokens_seen", 0)),
+                        }
+                    )
+            ranked_sweep_runs = sorted(
+                sweep_run_summaries,
+                key=lambda item: (
+                    -float(item["loss_reduction"]),
+                    float(item["final_loss"]),
+                    float(item["learning_rate"]),
+                    int(item["grad_accumulation_steps"]),
+                ),
+            )
+            best_run = ranked_sweep_runs[0]
+            learning_sanity_sweep_recommendation = {
+                "format": "heirloom.learning_sanity_lr_recommendation",
+                "version": 0,
+                "selection_metric": "max_loss_reduction_then_min_final_loss",
+                "recommended_learning_rate": best_run["learning_rate"],
+                "recommended_grad_accumulation_steps": best_run[
+                    "grad_accumulation_steps"
+                ],
+                "best_loss_reduction": best_run["loss_reduction"],
+                "best_final_loss": best_run["final_loss"],
+                "best_run": best_run,
+                "ranked_runs": ranked_sweep_runs,
+            }
+            write_worker_json(
+                sweep_recommendation,
+                learning_sanity_sweep_recommendation,
+            )
+            write_worker_json(
+                sweep_manifest,
+                {
+                    "format": "heirloom.learning_sanity_lr_grad_accumulation_sweep",
+                    "version": 0,
+                    "runs": sweep_runs,
+                    "recommendation": sweep_recommendation.name,
+                },
+            )
+            lr_grad_stage = {
+                "stage_id": "lr_grad_accumulation_sweep",
+                "report": sweep_manifest.name,
+                "expected_command": "train-lm",
+                "expected_model_family": "tiny_transformer",
+                "expected_loader_kind": "binary_shard_streaming",
+                "expected_distributed": distributed,
+                "expected_precision": precision,
+                "min_loss_reduction": min_loss_reduction,
+            }
+            if min_best_loss_reduction is not None:
+                lr_grad_stage["min_best_loss_reduction"] = min_best_loss_reduction
+            write_worker_json(
+                ladder_manifest,
+                {
+                    "format": "heirloom.learning_sanity_ladder",
+                    "version": 0,
+                    "stages": [lr_grad_stage],
+                },
+            )
+            run_to_file(
+                [
+                    "cargo",
+                    "run",
+                    "--bin",
+                    "heirloom",
+                    "--",
+                    "readiness",
+                    "validate-learning-sanity",
+                    "--manifest",
+                    str(ladder_manifest),
+                    "--report",
+                    str(validation_report),
+                ],
+                sweep_logs_dir / "validate-learning-sanity.txt",
+                cwd=source_dir,
+                env=sweep_env,
+            )
+        finally:
+            upload_diagnostic_tree(sweep_logs_dir, "learning-sanity-sweep/logs")
+            for relative in [
+                "fixed-shard.txt",
+                "tokenizer.json",
+                "prepared/manifest.json",
+                "lr-grad-sweep.json",
+                "lr-recommendation.json",
+                "learning-sanity-ladder.json",
+                "learning-sanity-validation.json",
+            ]:
+                report_path = sweep_dir / relative
+                if report_path.exists():
+                    report_uri = f"{artifact_prefix}/learning-sanity-sweep/{relative}"
+                    upload_gcs(report_path, report_uri)
+                    learning_sanity_sweep_report_uris.append(report_uri)
+            for report_path in sorted(sweep_dir.glob("*/report.json")):
+                relative = report_path.relative_to(sweep_dir).as_posix()
+                report_uri = f"{artifact_prefix}/learning-sanity-sweep/{relative}"
+                upload_gcs(report_path, report_uri)
+                learning_sanity_sweep_report_uris.append(report_uri)
+            for report_path in sorted(sweep_dir.glob("*/launcher-report.json")):
+                relative = report_path.relative_to(sweep_dir).as_posix()
+                report_uri = f"{artifact_prefix}/learning-sanity-sweep/{relative}"
+                upload_gcs(report_path, report_uri)
+                learning_sanity_sweep_report_uris.append(report_uri)
+            shard_artifacts = prepared_dir / "shards"
+            if shard_artifacts.exists():
+                learning_sanity_sweep_report_uris.extend(
+                    upload_directory_gcs(
+                        shard_artifacts,
+                        f"{artifact_prefix}/learning-sanity-sweep/prepared/shards",
+                    )
+                )
+            for rank_dir in sorted(sweep_dir.glob("*/ddp-ranks")):
+                if rank_dir.is_dir():
+                    relative = rank_dir.relative_to(sweep_dir).as_posix()
+                    upload_diagnostic_tree(
+                        rank_dir,
+                        f"learning-sanity-sweep/{relative}",
+                    )
+
     if validate_mode == "quick":
         run(["cargo", "fmt", "--all", "--check"], cwd=source_dir, env=env)
         run(
@@ -1530,6 +1904,8 @@ def main() -> int:
         "qb_tokenizer_hardpath_report_uris": qb_tokenizer_hardpath_report_uris,
         "qb_tokenizer_hardpath_checkpoint_prefix": qb_tokenizer_hardpath_checkpoint_prefix,
         "learning_sanity_fixture_report_uris": learning_sanity_fixture_report_uris,
+        "learning_sanity_sweep_report_uris": learning_sanity_sweep_report_uris,
+        "learning_sanity_sweep_recommendation": learning_sanity_sweep_recommendation,
     }
     if quick_clippy_reason is not None:
         summary["quick_clippy_reason"] = quick_clippy_reason
@@ -1627,12 +2003,54 @@ workerPoolSpecs:
     env:
     - name: PROJECT_ID
       value: "${PROJECT_ID}"
+    - name: CARGO_INCREMENTAL
+      value: "${CARGO_INCREMENTAL:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_SOURCE_URI
       value: "${SOURCE_URI}"
     - name: HEIRLOOM_VALIDATE_MODE
       value: "${VALIDATE_MODE}"
     - name: HEIRLOOM_RUN_LEARNING_SANITY_FIXTURES
       value: "${HEIRLOOM_RUN_LEARNING_SANITY_FIXTURES:-0}"
+    - name: HEIRLOOM_RUN_LEARNING_SANITY_SWEEP
+      value: "${HEIRLOOM_RUN_LEARNING_SANITY_SWEEP:-0}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_LRS
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_LRS:-0.015,0.0125,0.01,0.0075}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_GRAD_ACCUMULATION_STEPS
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_GRAD_ACCUMULATION_STEPS:-1,2}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_STEPS
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_STEPS:-48}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_BATCH
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_BATCH:-2}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_BLOCK
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_BLOCK:-8}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_D_MODEL
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_D_MODEL:-16}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_HEADS
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_HEADS:-2}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_FF
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_FF:-32}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_VOCAB
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_VOCAB:-280}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_SHARD_TOKENS
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_SHARD_TOKENS:-512}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_SEED
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_SEED:-7}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_DEVICES
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_DEVICES:-cuda:0,cuda:1,cuda:2,cuda:3}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_DISTRIBUTED
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_DISTRIBUTED:-nccl}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_PRECISION
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_PRECISION:-amp-bf16}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_LOG_EVERY
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_LOG_EVERY:-48}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_DDP_INIT_TIMEOUT_SECS
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_DDP_INIT_TIMEOUT_SECS:-180}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_DDP_CHECKSUM_EVERY
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_DDP_CHECKSUM_EVERY:-16}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_MIN_LOSS_REDUCTION
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_MIN_LOSS_REDUCTION:-0.0}"
+    - name: HEIRLOOM_LEARNING_SANITY_SWEEP_MIN_BEST_LOSS_REDUCTION
+      value: "${HEIRLOOM_LEARNING_SANITY_SWEEP_MIN_BEST_LOSS_REDUCTION:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_REQUIRE_GPU
       value: "${HEIRLOOM_REQUIRE_GPU:-1}"
     - name: HEIRLOOM_ACCELERATOR_COUNT
@@ -1697,6 +2115,14 @@ workerPoolSpecs:
       value: "${HEIRLOOM_NCCL_SOCKET_IFNAME:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_NCCL_IB_DISABLE
       value: "${HEIRLOOM_NCCL_IB_DISABLE:-__HEIRLOOM_UNSET__}"
+    - name: HEIRLOOM_NCCL_CUMEM_ENABLE
+      value: "${HEIRLOOM_NCCL_CUMEM_ENABLE:-__HEIRLOOM_UNSET__}"
+    - name: HEIRLOOM_NCCL_CUMEM_HOST_ENABLE
+      value: "${HEIRLOOM_NCCL_CUMEM_HOST_ENABLE:-__HEIRLOOM_UNSET__}"
+    - name: HEIRLOOM_NCCL_P2P_DISABLE
+      value: "${HEIRLOOM_NCCL_P2P_DISABLE:-__HEIRLOOM_UNSET__}"
+    - name: HEIRLOOM_NCCL_P2P_LEVEL
+      value: "${HEIRLOOM_NCCL_P2P_LEVEL:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_RUN_CUDA_STORAGE_TESTS
       value: "${HEIRLOOM_RUN_CUDA_STORAGE_TESTS:-1}"
     - name: HEIRLOOM_RUN_CUDA_TRAIN_LM_FIXTURE
@@ -1863,6 +2289,14 @@ workerPoolSpecs:
       value: "${HEIRLOOM_QB_TOKENIZER_HARDPATH_MATERIALIZE_MODE:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_QB_TOKENIZER_HARDPATH_SEED
       value: "${HEIRLOOM_QB_TOKENIZER_HARDPATH_SEED:-__HEIRLOOM_UNSET__}"
+    - name: HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_PATH
+      value: "${HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_PATH:-__HEIRLOOM_UNSET__}"
+    - name: HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_MANIFEST
+      value: "${HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_MANIFEST:-__HEIRLOOM_UNSET__}"
+    - name: HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_SELECTED_DOCS
+      value: "${HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_SELECTED_DOCS:-__HEIRLOOM_UNSET__}"
+    - name: HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_ONLY
+      value: "${HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_ONLY:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_QB_TOKENIZER_HARDPATH_VALID_FRACTION
       value: "${HEIRLOOM_QB_TOKENIZER_HARDPATH_VALID_FRACTION:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_QB_TOKENIZER_SOURCE_STAGE_DIR
@@ -2105,13 +2539,85 @@ while index < len(lines):
     filtered.append(line)
     index += 1
 
+def env_values(lines: list[str]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if (
+            line.startswith("    - name: ")
+            and index + 1 < len(lines)
+            and lines[index + 1].startswith("      value: ")
+        ):
+            name = line.split(": ", 1)[1]
+            value = lines[index + 1].split("value: ", 1)[1].strip()
+            values[name] = value.strip('"')
+            index += 2
+            continue
+        index += 1
+    return values
+
+def enabled(value: str | None) -> bool:
+    return value is not None and value.lower() in {"1", "true", "yes", "on"}
+
+values = env_values(filtered)
+drop_names: set[str] = set()
+drop_prefixes: list[str] = []
+
+if not enabled(values.get("HEIRLOOM_RUN_LEARNING_SANITY_FIXTURES")):
+    drop_names.add("HEIRLOOM_RUN_LEARNING_SANITY_FIXTURES")
+if not enabled(values.get("HEIRLOOM_RUN_LEARNING_SANITY_SWEEP")):
+    drop_names.add("HEIRLOOM_RUN_LEARNING_SANITY_SWEEP")
+    drop_prefixes.append("HEIRLOOM_LEARNING_SANITY_SWEEP_")
+if not enabled(values.get("HEIRLOOM_RUN_TENSOR_CORE_MICROBENCH")):
+    drop_names.add("HEIRLOOM_RUN_TENSOR_CORE_MICROBENCH")
+    drop_prefixes.append("HEIRLOOM_TENSOR_CORE_MICROBENCH_")
+if not enabled(values.get("HEIRLOOM_RUN_CUDA_TRAIN_LM_FIXTURE")):
+    drop_names.add("HEIRLOOM_RUN_CUDA_TRAIN_LM_FIXTURE")
+    drop_prefixes.append("HEIRLOOM_CUDA_FIXTURE_")
+if not enabled(values.get("HEIRLOOM_RUN_CUDA_TRAIN_MEMORY_LM_FIXTURE")):
+    drop_names.add("HEIRLOOM_RUN_CUDA_TRAIN_MEMORY_LM_FIXTURE")
+    drop_prefixes.append("HEIRLOOM_CUDA_MEMORY_FIXTURE_")
+if not enabled(values.get("HEIRLOOM_RUN_TINYSTORIES_CUDA_REFERENCE")):
+    drop_names.add("HEIRLOOM_RUN_TINYSTORIES_CUDA_REFERENCE")
+    drop_prefixes.append("HEIRLOOM_TINYSTORIES_CUDA_")
+if not enabled(values.get("HEIRLOOM_RUN_QB_DATA_HARDPATH")):
+    drop_names.add("HEIRLOOM_RUN_QB_DATA_HARDPATH")
+    drop_prefixes.append("HEIRLOOM_QB_DATA_HARDPATH_")
+
+compact: list[str] = []
+removed_disabled = 0
+index = 0
+while index < len(filtered):
+    line = filtered[index]
+    if (
+        line.startswith("    - name: ")
+        and index + 1 < len(filtered)
+        and filtered[index + 1].startswith("      value: ")
+    ):
+        name = line.split(": ", 1)[1]
+        if name in drop_names or any(name.startswith(prefix) for prefix in drop_prefixes):
+            removed_disabled += 1
+            index += 2
+            continue
+        compact.append(line)
+        compact.append(filtered[index + 1])
+        index += 2
+        continue
+    compact.append(line)
+    index += 1
+filtered = compact
+
 env_count = sum(1 for line in filtered if line.startswith("    - name: "))
 if env_count > 100:
     raise SystemExit(
-        f"Vertex custom job env var count {env_count} exceeds limit 100 after filtering {removed} unset entries"
+        f"Vertex custom job env var count {env_count} exceeds limit 100 after filtering {removed} unset entries and {removed_disabled} disabled entries"
     )
 path.write_text("\n".join(filtered) + "\n", encoding="utf-8")
-print(f"Filtered Vertex env entries: kept={env_count} removed_unset={removed}")
+print(
+    f"Filtered Vertex env entries: kept={env_count} "
+    f"removed_unset={removed} removed_disabled={removed_disabled}"
+)
 PY
 
 chmod 600 "$CONFIG_YAML"

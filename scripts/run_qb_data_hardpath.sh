@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 workdir="${1:-runs/qb-data-hardpath}"
 mode="${HEIRLOOM_QB_DATA_HARDPATH_MODE:-smoke}"
 model_kind="${HEIRLOOM_QB_DATA_HARDPATH_MODEL:-dense}"
+existing_tokenizer_path="${HEIRLOOM_QB_DATA_HARDPATH_TOKENIZER_PATH:-}"
 
 case "$model_kind" in
   dense|memory)
@@ -197,6 +198,37 @@ is_truthy() {
   esac
 }
 
+copy_gcs_file() {
+  local source="$1"
+  local destination="$2"
+  if [[ "${HEIRLOOM_GCS_COPY_TOOL:-}" == "gcloud" && "$(command -v gcloud || true)" != "" ]]; then
+    gcloud storage cp "$source" "$destination"
+  elif command -v gsutil >/dev/null 2>&1; then
+    gsutil cp "$source" "$destination"
+  else
+    gcloud storage cp "$source" "$destination"
+  fi
+}
+
+stage_existing_tokenizer() {
+  local source="$1"
+  local destination="$2"
+  mkdir -p "$(dirname "$destination")"
+  if [[ "$source" == gs://* ]]; then
+    copy_gcs_file "$source" "$destination"
+  else
+    if [[ -d "$source" ]]; then
+      source="$source/tokenizer.json"
+    fi
+    if [[ ! -f "$source" ]]; then
+      echo "HEIRLOOM_QB_DATA_HARDPATH_TOKENIZER_PATH does not exist: $source" >&2
+      return 1
+    fi
+    cp "$source" "$destination"
+  fi
+  "${heirloom_cmd[@]}" tokenizer validate "$destination"
+}
+
 run_stage() {
   local name="$1"
   shift
@@ -262,10 +294,14 @@ cp "$tinystories_train_path" "$tokenizer_corpus_path"
 printf '\n' >> "$tokenizer_corpus_path"
 cat "$qb_text_path" >> "$tokenizer_corpus_path"
 
-run_stage tokenizer "${heirloom_cmd[@]}" tokenizer train \
-  --input "$tokenizer_corpus_path" \
-  --out "$tokenizer_path" \
-  --vocab-size "$vocab_size"
+if [[ -n "$existing_tokenizer_path" ]]; then
+  run_stage tokenizer stage_existing_tokenizer "$existing_tokenizer_path" "$tokenizer_path"
+else
+  run_stage tokenizer "${heirloom_cmd[@]}" tokenizer train \
+    --input "$tokenizer_corpus_path" \
+    --out "$tokenizer_path" \
+    --vocab-size "$vocab_size"
+fi
 
 run_stage prepare "${heirloom_cmd[@]}" data prepare \
   --input "$tinystories_train_path" \

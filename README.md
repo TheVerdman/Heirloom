@@ -352,6 +352,17 @@ New production tokenizer v2 artifacts use forced ASCII digit isolation and the
 expanded 128-token reserved registry, so learned BPE merges do not absorb math,
 code, or schema digits into inconsistent multi-character tokens.
 
+QB-1 targets a slightly-greater-than-1B parameter memory transformer for the
+governed 20B-token corpus. The current target shape is `vocab=32768`,
+`block=1024`, `n_layers=36`, `d_model=1536`, `heads=24` (`head_dim=64`),
+`ff_hidden=6144`, memory layers `8,16,24,32`, `memory_slots=1024`,
+`memory_key_dim=64`, `memory_value_dim=64`, sparse-row memory updates, and SMFT
+row masking. This is approximately 1.05B trainable parameters; smaller
+`d_model=1024` runs are readiness and throughput gates. This is not 1.05B
+dense-only parameters: the equivalent 36-layer all-dense transformer would be
+approximately 1.12B parameters, while QB-1 replaces four dense FFN blocks with
+memory blocks and adds small shared key/value memory tables.
+
 ## Suggested Review Questions
 
 - Are view semantics honest enough, especially around expand, aliasing, and mutation?

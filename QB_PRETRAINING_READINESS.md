@@ -316,6 +316,21 @@ The first goal is not benchmark quality. It is monotonic learning under the
 same loader, checkpoint, resume, eval, and generation contracts as the hard
 path.
 
+The first full-exposure 32K governed-blend Vertex gate passed on 2026-06-20:
+custom job `8664974044392587264`, artifact prefix
+`gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/reference-runs/heirloom-validate-quick-20260620-164906/`.
+It reused the prepared manifest from
+`heirloom-validate-quick-20260620-140258`, skipped `data materialize-blend`,
+and recorded `prepared_manifest_reused=true` with
+`loader.kind="binary_shard_streaming"`. The run used the digit-isolated 32K
+tokenizer, no TinyStories, all governed blend sources, `lr=0.0125`,
+`grad_accumulation_steps=2`, `500` train steps, and `116` resume steps. Train
+saw `2,048,000` tokens with loss `10.731529 -> 4.493049`; resume saw
+`475,136` tokens with loss `5.984418 -> 4.689698`, for `2,523,136` total
+tokens against `2,521,368` selected tokens. The combined learning-sanity
+validator passed with `loss_reduction=0.562998`; heldout eval reported loss
+`4.522499` and perplexity `92.065346`.
+
 Learning sanity evidence is now validated with a native Rust readiness command:
 
 ```bash
@@ -422,6 +437,26 @@ global-effective-batch math, and `performance.tokens_seen > 0`. The checked
 fixture under `tests/fixtures/learning_sanity/lr-grad-sweep-valid.json`
 validates this contract with synthetic reports only; it is not a substitute for
 the paid 4x A100 sweep.
+
+The first live 4x A100 sweep passed on Vertex with learning rates `0.01` and
+`0.005` across grad accumulation `1` and `2`; the best observed point was
+`lr=0.01, grad_accumulation_steps=2` with loss reduction about `0.729`. The
+follow-up LR improvement sweep, Vertex job `2884384020337000448`
+(`heirloom-validate-quick-20260619-222355`), searched
+`0.015,0.0125,0.01,0.0075` crossed with grad accumulation `1,2` and passed.
+Its recommendation artifact selected
+`lr=0.015, grad_accumulation_steps=2`, with loss `5.869240 -> 1.188859`,
+`loss_reduction=0.797442`, `global_effective_batch_size=16`, and
+`tokens_seen=6144`. The weakest passing run in that sweep still reduced loss by
+`0.615827`. Because the winner was the high end of the grid, `0.015` is the
+next learning rate to carry into the longer 32K blend run; a later high-side
+bracket can test whether `0.0175` or `0.02` is still stable.
+The worker writes `lr-recommendation.json` so the next longer 32K blend run can
+consume the best observed learning rate and effective-batch setting instead of
+relying on manual log inspection. The validator reports
+`recommended_learning_rate`, `recommended_grad_accumulation_steps`,
+`best_loss_reduction`, and `best_run`; `min_best_loss_reduction` can be set on
+the stage when a future gate needs to enforce a minimum winner quality.
 
 For `longer_32k_blend`, the stage report points at the
 `scripts/run_qb_tokenizer_hardpath.sh` summary artifact. The Rust validator

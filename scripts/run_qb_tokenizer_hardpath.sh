@@ -9,6 +9,11 @@ sample_bytes="${HEIRLOOM_QB_TOKENIZER_HARDPATH_SAMPLE_BYTES:-}"
 target_tokens="${HEIRLOOM_QB_TOKENIZER_HARDPATH_TARGET_TOKENS:-}"
 materialize_mode="${HEIRLOOM_QB_TOKENIZER_HARDPATH_MATERIALIZE_MODE:-}"
 seed="${HEIRLOOM_QB_TOKENIZER_HARDPATH_SEED:-1107}"
+existing_tokenizer_path="${HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_PATH:-}"
+prepared_manifest_source="${HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_MANIFEST:-}"
+prepared_selected_docs="${HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_SELECTED_DOCS:-}"
+tokenizer_only="${HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_ONLY:-0}"
+cargo_profile="${HEIRLOOM_QB_TOKENIZER_HARDPATH_CARGO_PROFILE:-}"
 device="${HEIRLOOM_QB_TOKENIZER_HARDPATH_DEVICE:-cpu}"
 devices="${HEIRLOOM_QB_TOKENIZER_HARDPATH_DEVICES:-}"
 distributed="${HEIRLOOM_QB_TOKENIZER_HARDPATH_DISTRIBUTED:-}"
@@ -106,6 +111,26 @@ if [[ "$mode" == "full" ]]; then
   fi
 fi
 
+if [[ -z "$cargo_profile" ]]; then
+  if [[ "$mode" == "full" ]]; then
+    cargo_profile=release
+  else
+    cargo_profile=debug
+  fi
+fi
+case "$cargo_profile" in
+  release)
+    cargo_run=(cargo run --release --bin heirloom)
+    ;;
+  debug | dev)
+    cargo_run=(cargo run --bin heirloom)
+    ;;
+  *)
+    echo "unsupported HEIRLOOM_QB_TOKENIZER_HARDPATH_CARGO_PROFILE=$cargo_profile (expected release or debug)" >&2
+    exit 2
+    ;;
+esac
+
 mkdir -p "$out_dir"
 work_dir="$out_dir/tokenizer-work"
 mkdir -p "$work_dir"
@@ -116,6 +141,29 @@ mkdir -p "$source_stage_dir"
 
 is_gcs_uri() {
   [[ "$1" == gs://* ]]
+}
+
+copy_gcs_object_or_prefix() {
+  local source="$1"
+  local destination="$2"
+  local recursive="${3:-0}"
+  if [[ "${HEIRLOOM_GCS_COPY_TOOL:-}" == "gcloud" && "$(command -v gcloud || true)" != "" ]]; then
+    gcloud storage cp "$source" "$destination" >&2
+    return
+  fi
+  if command -v gsutil >/dev/null 2>&1; then
+    if [[ "$recursive" == "1" ]]; then
+      gsutil -m cp "$source" "$destination" >&2
+    else
+      gsutil cp "$source" "$destination" >&2
+    fi
+    return
+  fi
+  if command -v gcloud >/dev/null 2>&1; then
+    gcloud storage cp "$source" "$destination" >&2
+    return
+  fi
+  return 1
 }
 
 reject_compressed_source() {
@@ -170,11 +218,7 @@ stage_gcs_source() {
     mkdir -p "$destination_dir"
     if [[ "$(source_dir_file_count "$destination_dir")" == "0" ]]; then
       echo "staging $name prefix from $uri to $destination_dir" >&2
-      if command -v gsutil >/dev/null 2>&1; then
-        gsutil -m cp "${uri%/}/*" "$destination_dir/" >&2
-      elif command -v gcloud >/dev/null 2>&1; then
-        gcloud storage cp "${uri%/}/*" "$destination_dir/" >&2
-      else
+      if ! copy_gcs_object_or_prefix "${uri%/}/*" "$destination_dir/" 1; then
         python3 - "$uri" "$destination_dir" <<'PY'
 import os
 import sys
@@ -223,11 +267,7 @@ PY
   mkdir -p "$destination_dir"
   if [[ ! -f "$destination" ]]; then
     echo "staging $name from $uri to $destination" >&2
-    if command -v gsutil >/dev/null 2>&1; then
-      gsutil cp "$uri" "$destination" >&2
-    elif command -v gcloud >/dev/null 2>&1; then
-      gcloud storage cp "$uri" "$destination" >&2
-    else
+    if ! copy_gcs_object_or_prefix "$uri" "$destination"; then
       python3 - "$uri" "$destination" <<'PY'
 import os
 import sys
@@ -269,6 +309,256 @@ require_source_path() {
   fi
   echo "$name must point to a materialized approved source file or flat directory for full mode: $path" >&2
   exit 1
+}
+
+resolve_existing_tokenizer_path() {
+  local name="$1"
+  local path="$2"
+  local staged="$path"
+  if is_gcs_uri "$path"; then
+    staged="$(stage_gcs_source "$name" "$path" reused-tokenizer)"
+  fi
+  if [[ -d "$staged" ]]; then
+    if [[ -f "$staged/tokenizer.json" ]]; then
+      staged="$staged/tokenizer.json"
+    else
+      echo "$name directory must contain tokenizer.json: $staged" >&2
+      exit 1
+    fi
+  fi
+  if [[ ! -f "$staged" ]]; then
+    echo "$name must point to a tokenizer.json file or directory containing tokenizer.json: $path" >&2
+    exit 1
+  fi
+  printf '%s\n' "$staged"
+}
+
+stage_prepared_manifest() {
+  local source="$1"
+  local destination_dir="$2"
+  mkdir -p "$destination_dir"
+  repair_flat_prepared_shards() {
+    local dir="$1"
+    if [[ -d "$dir/shards" ]]; then
+      return
+    fi
+    local flat_shard
+    flat_shard="$(find "$dir" -maxdepth 1 -type f \( -name '*.tokens.bin' -o -name '*.tokens.json' \) -print -quit)"
+    if [[ -n "$flat_shard" ]]; then
+      mkdir -p "$dir/shards"
+      find "$dir" -maxdepth 1 -type f \( -name '*.tokens.bin' -o -name '*.tokens.json' \) -exec mv {} "$dir/shards/" \;
+    fi
+  }
+  if is_gcs_uri "$source"; then
+    local prefix="$source"
+    if [[ "$prefix" == */manifest.json ]]; then
+      prefix="${prefix%/manifest.json}/"
+    else
+      prefix="${prefix%/}/"
+    fi
+    echo "staging HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_MANIFEST from $prefix to $destination_dir" >&2
+    if command -v gcloud >/dev/null 2>&1; then
+      gcloud storage cp "${prefix%/}/**" "$destination_dir/" >&2 || true
+      repair_flat_prepared_shards "$destination_dir"
+    fi
+    if [[ ! -f "$destination_dir/manifest.json" ]] && command -v gsutil >/dev/null 2>&1; then
+      gsutil -m cp -r "${prefix%/}/*" "$destination_dir/" >&2 || true
+      repair_flat_prepared_shards "$destination_dir"
+    fi
+    if [[ ! -f "$destination_dir/manifest.json" || ! -d "$destination_dir/shards" ]]; then
+      python3 - "$prefix" "$destination_dir" <<'PY'
+import os
+import sys
+
+uri, destination_dir = sys.argv[1:]
+if not uri.startswith("gs://"):
+    raise SystemExit(f"not a GCS URI: {uri}")
+bucket_name, prefix = uri[5:].split("/", 1)
+prefix = prefix.rstrip("/") + "/"
+os.makedirs(destination_dir, exist_ok=True)
+try:
+    from google.cloud import storage
+except Exception as err:
+    raise SystemExit(
+        "staging gs:// prepared manifests requires gcloud, gsutil, or the "
+        f"google-cloud-storage Python package: {err}"
+    )
+client = storage.Client(project=os.environ.get("PROJECT_ID") or None)
+downloaded = 0
+for blob in client.bucket(bucket_name).list_blobs(prefix=prefix):
+    name = blob.name[len(prefix):]
+    if not name or name.endswith("/"):
+        continue
+    destination = os.path.join(destination_dir, name)
+    os.makedirs(os.path.dirname(destination), exist_ok=True)
+    blob.download_to_filename(destination)
+    downloaded += 1
+if downloaded == 0:
+    raise SystemExit(f"no prepared manifest objects found under {uri}")
+PY
+    fi
+  else
+    local source_dir="$source"
+    if [[ -f "$source" ]]; then
+      source_dir="$(cd "$(dirname "$source")" && pwd)"
+    elif [[ -d "$source" ]]; then
+      source_dir="$(cd "$source" && pwd)"
+    else
+      echo "HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_MANIFEST must point to a manifest.json file, prepared directory, or gs:// prepared prefix: $source" >&2
+      exit 1
+    fi
+    if [[ ! -f "$source_dir/manifest.json" ]]; then
+      echo "prepared manifest directory must contain manifest.json: $source_dir" >&2
+      exit 1
+    fi
+    local source_real destination_real
+    source_real="$(cd "$source_dir" && pwd)"
+    destination_real="$(mkdir -p "$destination_dir" && cd "$destination_dir" && pwd)"
+    if [[ "$source_real" != "$destination_real" ]]; then
+      cp -R "$source_dir/." "$destination_dir/"
+      repair_flat_prepared_shards "$destination_dir"
+    fi
+  fi
+  repair_flat_prepared_shards "$destination_dir"
+  if [[ ! -f "$destination_dir/manifest.json" ]]; then
+    echo "failed to stage prepared manifest from $source to $destination_dir/manifest.json" >&2
+    exit 1
+  fi
+  if [[ ! -d "$destination_dir/shards" ]]; then
+    echo "prepared manifest reuse requires a staged shards/ directory next to manifest.json: $destination_dir" >&2
+    exit 1
+  fi
+  printf '%s\n' "$destination_dir/manifest.json"
+}
+
+stage_reused_materialization_sidecars() {
+  local source="$1"
+  local destination_dir="$2"
+  mkdir -p "$destination_dir"
+  if is_gcs_uri "$source"; then
+    local prefix="$source"
+    if [[ "$prefix" == */manifest.json ]]; then
+      prefix="${prefix%/manifest.json}"
+    fi
+    prefix="${prefix%/}"
+    if [[ "${prefix##*/}" == "prepared" ]]; then
+      local materialized_prefix="${prefix%/prepared}"
+      for name in curation-report.json source-index.json selected-docs.jsonl tokenizer-sample-manifest.json; do
+        if [[ ! -f "$destination_dir/$name" ]]; then
+          if command -v gcloud >/dev/null 2>&1; then
+            gcloud storage cp "$materialized_prefix/$name" "$destination_dir/$name" >&2 || true
+          elif command -v gsutil >/dev/null 2>&1; then
+            gsutil cp "$materialized_prefix/$name" "$destination_dir/$name" >&2 || true
+          fi
+        fi
+      done
+    fi
+  else
+    local source_dir="$source"
+    if [[ -f "$source" ]]; then
+      source_dir="$(cd "$(dirname "$source")" && pwd)"
+    elif [[ -d "$source" ]]; then
+      source_dir="$(cd "$source" && pwd)"
+    fi
+    if [[ "${source_dir##*/}" == "prepared" ]]; then
+      local materialized_dir
+      materialized_dir="$(cd "$source_dir/.." && pwd)"
+      for name in curation-report.json source-index.json selected-docs.jsonl tokenizer-sample-manifest.json; do
+        if [[ -f "$materialized_dir/$name" && ! -f "$destination_dir/$name" ]]; then
+          cp "$materialized_dir/$name" "$destination_dir/$name"
+        fi
+      done
+    fi
+  fi
+}
+
+write_reused_materialization_metadata() {
+  local manifest="$1"
+  local destination_dir="$2"
+  local source="$3"
+  python3 - "$manifest" "$destination_dir" "$source" "$target_tokens" "$materialize_mode" "$prepared_selected_docs" "$tokenizer_path" <<'PY'
+import json
+import os
+import sys
+
+manifest_path, destination_dir, source, target_tokens, materialize_mode, selected_docs_override, tokenizer_path = sys.argv[1:]
+
+def load(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+manifest = load(manifest_path)
+tokenizer = load(tokenizer_path)
+tokenizer_metadata = tokenizer.get("metadata", {})
+selected_tokens = int(manifest.get("train_tokens", 0)) + int(manifest.get("valid_tokens", 0))
+selected_docs_path = os.path.join(destination_dir, "selected-docs.jsonl")
+if os.path.exists(selected_docs_path):
+    with open(selected_docs_path, "r", encoding="utf-8") as f:
+        selected_docs = sum(1 for line in f if line.strip())
+elif selected_docs_override:
+    selected_docs = int(selected_docs_override)
+else:
+    selected_docs = 0
+
+source_index_path = os.path.join(destination_dir, "source-index.json")
+if not os.path.exists(source_index_path):
+    with open(source_index_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "format": "heirloom.reused_source_index",
+                "status": "passed",
+                "prepared_manifest_reused": True,
+                "prepared_manifest_source": source,
+                "sources": manifest.get("sources", []),
+            },
+            f,
+            indent=2,
+        )
+        f.write("\n")
+
+if selected_docs and not os.path.exists(selected_docs_path):
+    with open(selected_docs_path, "w", encoding="utf-8") as f:
+        for index in range(selected_docs):
+            f.write(json.dumps({"reuse_placeholder": True, "index": index}) + "\n")
+
+curation_path = os.path.join(destination_dir, "curation-report.json")
+if not os.path.exists(curation_path):
+    with open(curation_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "format": "heirloom.blend_curation_report",
+                "status": "passed",
+                "mode": materialize_mode,
+                "target_tokens": int(target_tokens),
+                "selected_tokens": selected_tokens,
+                "selected_docs": selected_docs,
+                "prepared_manifest_reused": True,
+                "prepared_manifest_source": source,
+                "tokenizer": {
+                    "tokenizer_id": tokenizer_metadata.get("tokenizer_id", ""),
+                    "format": tokenizer_metadata.get("format", ""),
+                    "version": int(tokenizer_metadata.get("version", 0)),
+                    "vocab_size": int(tokenizer_metadata.get("vocab_size", 0)),
+                    "tokenizer_hash": tokenizer_metadata.get("artifact_hash")
+                    or tokenizer_metadata.get("validation", {}).get("artifact_hash", ""),
+                    "artifact_hash": tokenizer_metadata.get("artifact_hash", ""),
+                    "reserved_tokens": len(tokenizer.get("reserved_tokens", [])),
+                    "reserved_registry_hash": tokenizer_metadata.get("reserved_registry_hash", ""),
+                    "training_config": tokenizer_metadata.get("training_config", {}),
+                    "validation": tokenizer_metadata.get("validation", {}),
+                },
+                "sources": manifest.get("sources", []),
+                "sizing": {
+                    "train_tokens": manifest.get("train_tokens"),
+                    "valid_tokens": manifest.get("valid_tokens"),
+                    "storage": manifest.get("storage"),
+                },
+            },
+            f,
+            indent=2,
+        )
+        f.write("\n")
+PY
 }
 
 write_smoke_file_if_missing() {
@@ -478,31 +768,179 @@ with open(out, "w", encoding="utf-8") as f:
     f.write("\n")
 PY
 
-train_args=(
-  cargo run --bin heirloom -- tokenizer train-corpus
-  --corpus-blend "$blend_path"
-  --out "$tokenizer_path"
-  --work-dir "$work_dir"
-  --vocab-size "$vocab_size"
-  --sample-bytes "$sample_bytes"
-  --seed "$seed"
-  --report "$tokenizer_report"
-)
-if [[ "$mode" == "full" && "$vocab_size" == "32768" ]]; then
-  train_args+=(--require-exact-vocab)
-fi
-"${train_args[@]}"
+if [[ -n "$existing_tokenizer_path" ]]; then
+  resolved_tokenizer_path="$(resolve_existing_tokenizer_path HEIRLOOM_QB_TOKENIZER_HARDPATH_TOKENIZER_PATH "$existing_tokenizer_path")"
+  cp "$resolved_tokenizer_path" "$tokenizer_path"
+  python3 - "$tokenizer_report" "$existing_tokenizer_path" "$resolved_tokenizer_path" "$tokenizer_path" "$vocab_size" "$sample_bytes" "$seed" <<'PY'
+import json
+import os
+import sys
 
-cargo run --bin heirloom -- tokenizer validate "$tokenizer_path"
-cargo run --bin heirloom -- tokenizer fertility \
+report, source, resolved, destination, vocab_size, sample_bytes, seed = sys.argv[1:]
+with open(destination, "r", encoding="utf-8") as f:
+    tokenizer = json.load(f)
+metadata = tokenizer.get("metadata", {})
+actual_vocab_size = int(metadata.get("vocab_size", 0))
+expected_vocab_size = int(vocab_size)
+if actual_vocab_size != expected_vocab_size:
+    raise SystemExit(
+        f"reused tokenizer vocab_size={actual_vocab_size} does not match expected {expected_vocab_size}"
+    )
+value = {
+    "command": "tokenizer train-corpus",
+    "status": "reused",
+    "source_tokenizer": source,
+    "resolved_tokenizer": resolved,
+    "destination_tokenizer": destination,
+    "requested_vocab_size": expected_vocab_size,
+    "sample_bytes": int(sample_bytes),
+    "seed": int(seed),
+    "tokenizer_metadata": metadata,
+}
+os.makedirs(os.path.dirname(report), exist_ok=True)
+with open(report, "w", encoding="utf-8") as f:
+    json.dump(value, f, indent=2)
+    f.write("\n")
+PY
+else
+  train_args=(
+    "${cargo_run[@]}" -- tokenizer train-corpus
+    --corpus-blend "$blend_path"
+    --out "$tokenizer_path"
+    --work-dir "$work_dir"
+    --vocab-size "$vocab_size"
+    --sample-bytes "$sample_bytes"
+    --seed "$seed"
+    --report "$tokenizer_report"
+  )
+  if [[ "$mode" == "full" && "$vocab_size" == "32768" ]]; then
+    train_args+=(--require-exact-vocab)
+  fi
+  "${train_args[@]}"
+fi
+
+if [[ -n "$existing_tokenizer_path" ]]; then
+  python3 - "$tokenizer_report" "$tokenizer_path" "$blend_path" "$work_dir" "$existing_tokenizer_path" "$resolved_tokenizer_path" <<'PY'
+import collections
+import json
+import os
+import sys
+
+report, tokenizer_path, blend_path, work_dir, source, resolved = sys.argv[1:]
+
+with open(tokenizer_path, "r", encoding="utf-8") as f:
+    tokenizer = json.load(f)
+
+metadata = tokenizer.get("metadata", {})
+id_to_bytes = tokenizer.get("id_to_bytes", [])
+histogram = collections.Counter(str(len(piece)) for piece in id_to_bytes)
+validation = metadata.get("validation", {})
+artifact_hash = metadata.get("artifact_hash") or validation.get("artifact_hash") or "reused"
+value = {
+    "command": "tokenizer train-corpus",
+    "status": "passed",
+    "reuse_status": "reused",
+    "reused_tokenizer": True,
+    "source_tokenizer": source,
+    "resolved_tokenizer": resolved,
+    "corpus_blend": blend_path,
+    "work_dir": work_dir,
+    "sample_manifest": None,
+    "sample_manifest_hash": metadata.get("sample_manifest_hash", ""),
+    "sampled_bytes": int(validation.get("training_bytes") or metadata.get("training_bytes") or 0),
+    "tokenizer": {
+        "tokenizer_id": metadata.get("tokenizer_id", ""),
+        "tokenizer_path": tokenizer_path,
+        "format": metadata.get("format", ""),
+        "version": int(metadata.get("version", 0)),
+        "vocab_size": int(metadata.get("vocab_size", 0)),
+        "tokenizer_hash": artifact_hash,
+        "artifact_hash": metadata.get("artifact_hash", ""),
+        "source_blend_hash": metadata.get("source_blend_hash", ""),
+        "sample_manifest_hash": metadata.get("sample_manifest_hash", ""),
+        "reserved_tokens": len(tokenizer.get("reserved_tokens", [])),
+        "reserved_registry_hash": metadata.get("reserved_registry_hash", ""),
+        "training_config": metadata.get("training_config", {}),
+        "validation": validation,
+    },
+    "token_length_histogram": dict(sorted(histogram.items(), key=lambda item: int(item[0]))),
+    "source_reports": [],
+    "timing": {
+        "sample_materialization_elapsed_ms": 0,
+        "tokenizer_train_elapsed_ms": 0,
+        "save_hash_elapsed_ms": 0,
+        "total_elapsed_ms": 0,
+    },
+    "hard_path": {
+        "native_trainer": True,
+        "external_tokenizer_dependency": False,
+        "tiny_stories_allowed": False,
+    },
+}
+os.makedirs(os.path.dirname(report), exist_ok=True)
+with open(report, "w", encoding="utf-8") as f:
+    json.dump(value, f, indent=2)
+    f.write("\n")
+PY
+fi
+
+"${cargo_run[@]}" -- tokenizer validate "$tokenizer_path"
+"${cargo_run[@]}" -- tokenizer fertility \
   --tokenizer "$tokenizer_path" \
   --corpus-blend "$blend_path" \
   --report "$fertility_report" \
   --sample-bytes "$sample_bytes" \
   --seed "$seed"
 
+if [[ "$tokenizer_only" == "1" || "$tokenizer_only" == "true" ]]; then
+  python3 - "$summary_path" "$mode" "$blend_path" "$tokenizer_path" "$tokenizer_report" "$fertility_report" <<'PY'
+import json
+import sys
+
+summary, mode, blend, tokenizer, tokenizer_report, fertility = sys.argv[1:]
+
+def load(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+tok_json = load(tokenizer)
+train_json = load(tokenizer_report)
+fertility_json = load(fertility)
+summary_json = {
+    "status": "passed",
+    "mode": mode,
+    "tokenizer_only": True,
+    "production_gate": mode == "full",
+    "tokenizer_version": tok_json["metadata"]["version"],
+    "tokenizer_vocab_size": tok_json["metadata"]["vocab_size"],
+    "reserved_tokens": len(tok_json.get("reserved_tokens", [])),
+    "tokenizer_train_status": train_json.get("status", "passed"),
+    "sampled_bytes": train_json.get("sampled_bytes"),
+    "fertility_report_status": fertility_json.get("status"),
+    "artifacts": {
+        "corpus_blend": blend,
+        "tokenizer": tokenizer,
+        "tokenizer_report": tokenizer_report,
+        "fertility_report": fertility,
+    },
+}
+with open(summary, "w", encoding="utf-8") as f:
+    json.dump(summary_json, f, indent=2)
+    f.write("\n")
+PY
+  exit 0
+fi
+
+prepared_manifest_reused=0
+if [[ -n "$prepared_manifest_source" ]]; then
+  prepared_manifest_reused=1
+  rm -rf "$materialized_dir/prepared"
+  prepared_manifest="$(stage_prepared_manifest "$prepared_manifest_source" "$materialized_dir/prepared")"
+  stage_reused_materialization_sidecars "$prepared_manifest_source" "$materialized_dir"
+  write_reused_materialization_metadata "$prepared_manifest" "$materialized_dir" "$prepared_manifest_source"
+else
 materialize_args=(
-  cargo run --bin heirloom -- data materialize-blend
+  "${cargo_run[@]}" -- data materialize-blend
   --corpus-blend "$blend_path"
   --tokenizer "$tokenizer_path"
   --out-dir "$materialized_dir"
@@ -551,9 +989,10 @@ if [[ -n "$checkpoint_every_bytes" ]]; then
   materialize_args+=(--checkpoint-every-bytes "$checkpoint_every_bytes")
 fi
 "${materialize_args[@]}"
+fi
 
 train_memory_args=(
-  cargo run --bin heirloom -- train-memory-lm
+  "${cargo_run[@]}" -- train-memory-lm
   --dataset-manifest "$prepared_manifest"
   --checkpoint "$checkpoint"
   --steps "$steps"
@@ -594,7 +1033,7 @@ done
 resume_args+=(--resume)
 "${resume_args[@]}"
 
-cargo run --bin heirloom -- eval-memory-lm \
+"${cargo_run[@]}" -- eval-memory-lm \
   --checkpoint "$checkpoint" \
   --dataset-manifest "$prepared_manifest" \
   --split valid \
@@ -604,7 +1043,7 @@ cargo run --bin heirloom -- eval-memory-lm \
   --precision "$precision" \
   --report "$eval_report"
 
-cargo run --bin heirloom -- generate-memory-lm \
+"${cargo_run[@]}" -- generate-memory-lm \
   --checkpoint "$checkpoint" \
   --prompt "<|user|>Summarize the QB tokenizer hard path.<|message_end|><|assistant|>" \
   --max-new-tokens "$generation_tokens" \
@@ -612,11 +1051,11 @@ cargo run --bin heirloom -- generate-memory-lm \
   --precision "$precision" \
   --report "$generation_report"
 
-python3 - "$summary_path" "$mode" "$blend_path" "$tokenizer_path" "$tokenizer_report" "$fertility_report" "$prepared_manifest" "$materialized_dir/curation-report.json" "$materialized_dir/source-index.json" "$materialized_dir/selected-docs.jsonl" "$train_report" "$resume_report" "$eval_report" "$generation_report" <<'PY'
+python3 - "$summary_path" "$mode" "$blend_path" "$tokenizer_path" "$tokenizer_report" "$fertility_report" "$prepared_manifest" "$materialized_dir/curation-report.json" "$materialized_dir/source-index.json" "$materialized_dir/selected-docs.jsonl" "$train_report" "$resume_report" "$eval_report" "$generation_report" "$prepared_manifest_reused" "$prepared_manifest_source" <<'PY'
 import json
 import sys
 
-summary, mode, blend, tokenizer, tokenizer_report, fertility, manifest, curation, source_index, selected_docs, train, resume, eval_report, generation = sys.argv[1:]
+summary, mode, blend, tokenizer, tokenizer_report, fertility, manifest, curation, source_index, selected_docs, train, resume, eval_report, generation, prepared_reused, prepared_source = sys.argv[1:]
 
 def load(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -636,6 +1075,8 @@ summary_json = {
     "selected_docs": curation_json["selected_docs"],
     "materialization_sizing": curation_json.get("sizing"),
     "materialization_checkpoint": curation_json.get("checkpoint"),
+    "prepared_manifest_reused": prepared_reused in {"1", "true", "True"},
+    "prepared_manifest_source": prepared_source or None,
     "tokenizer_version": tok_json["metadata"]["version"],
     "tokenizer_vocab_size": tok_json["metadata"]["vocab_size"],
     "reserved_tokens": len(tok_json.get("reserved_tokens", [])),
@@ -730,7 +1171,7 @@ with open(manifest, "w", encoding="utf-8") as f:
     json.dump(ladder, f, indent=2)
     f.write("\n")
 PY
-  cargo run --bin heirloom -- readiness validate-learning-sanity \
+  "${cargo_run[@]}" -- readiness validate-learning-sanity \
     --manifest "$learning_sanity_manifest" \
     --report "$learning_sanity_validation"
 fi

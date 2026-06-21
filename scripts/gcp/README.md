@@ -434,6 +434,35 @@ The QB-native data hard path runs `scripts/run_qb_data_hardpath.sh`. It prepares
 
 The QB-native tokenizer hard path runs `scripts/run_qb_tokenizer_hardpath.sh` and is enabled with `HEIRLOOM_RUN_QB_TOKENIZER_HARDPATH=1`. It trains a native tokenizer artifact v2 from a corpus-blend manifest, validates reserved tokens, writes fertility reports, materializes governed source samples with `heirloom data materialize-blend`, prepares manifest v2 binary shards, and runs memory train/resume/eval/generation. `HEIRLOOM_QB_TOKENIZER_HARDPATH_MODE=smoke` uses non-TinyStories local fixtures plus any available VECL-QB v1-hard data; `full` requires materialized approved source paths via `HEIRLOOM_QB_TOKENIZER_DOLMA_PATH`, `HEIRLOOM_QB_TOKENIZER_NEMOTRON_CC_PATH`, `HEIRLOOM_QB_TOKENIZER_OLMO3_PATH`, `HEIRLOOM_QB_TOKENIZER_NEMOTRON_CC_MATH_PATH`, and `HEIRLOOM_QB_TOKENIZER_QB_V1_HARD_PATH`. Those variables may be local file paths, flat local source directories, single-object `gs://` URIs, or flat `gs://` prefixes ending in `/`; `gs://` inputs are staged onto the Vertex worker under `HEIRLOOM_QB_TOKENIZER_SOURCE_STAGE_DIR` or `qb-tokenizer-hardpath/source-slices` by default, while the generated corpus-blend manifest records the original GCS URI. Full mode defaults to `HEIRLOOM_QB_TOKENIZER_HARDPATH_TARGET_TOKENS=20000000000` and `HEIRLOOM_QB_TOKENIZER_HARDPATH_MATERIALIZE_MODE=full`; it also defaults `HEIRLOOM_QB_TOKENIZER_HARDPATH_CANDIDATE_TEXT_MODE=rescan`, exact bounded candidate retention to `HEIRLOOM_QB_TOKENIZER_HARDPATH_CANDIDATE_RETENTION_TOKEN_MULTIPLIER=1.0`, `HEIRLOOM_QB_TOKENIZER_HARDPATH_CANDIDATE_RETENTION_MIN_DOCS=100000`, and `HEIRLOOM_QB_TOKENIZER_HARDPATH_CANDIDATE_PRUNE_EVERY=50000`, plus materializer heartbeat logs to `HEIRLOOM_QB_TOKENIZER_HARDPATH_PROGRESS_EVERY_RECORDS=100000` and `HEIRLOOM_QB_TOKENIZER_HARDPATH_PROGRESS_EVERY_BYTES=1073741824`. Full mode also enables materializer scan checkpoints by default under `HEIRLOOM_QB_TOKENIZER_HARDPATH_CHECKPOINT_DIR` or `$out_dir/materializer-checkpoints`, every `HEIRLOOM_QB_TOKENIZER_HARDPATH_CHECKPOINT_EVERY_RECORDS=100000` records or `HEIRLOOM_QB_TOKENIZER_HARDPATH_CHECKPOINT_EVERY_BYTES=1073741824` bytes; set `HEIRLOOM_QB_TOKENIZER_HARDPATH_RESUME_CHECKPOINT=1` to resume compatible source scan checkpoints. Smoke mode defaults to a small `sample` materialization. Vertex uploads artifacts under `qb-tokenizer-hardpath/`, including `materialized/curation-report.json`, `materialized/source-index.json`, `materialized/selected-docs.jsonl`, `materialized/tokenizer-sample-manifest.json`, `materialized/prepared/manifest.json`, `materialized/prepared/shards/`, and full-mode materializer scan checkpoints.
 
+Set `HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_MANIFEST` to reuse an existing
+prepared manifest instead of running `data materialize-blend` again. The value
+may be a local `manifest.json`, a local prepared directory containing
+`manifest.json` plus `shards/`, a `gs://.../prepared/manifest.json` object, or a
+`gs://.../prepared/` prefix. The hard path stages the prepared directory under
+`materialized/prepared/`, preserves/copies materialization sidecars such as
+`curation-report.json` when available, synthesizes minimal reuse metadata when
+needed, and records `prepared_manifest_reused` plus
+`prepared_manifest_source` in `summary.json`. If the prepared sidecars are not
+available and the learning-sanity gate needs a selected-doc count, provide
+`HEIRLOOM_QB_TOKENIZER_HARDPATH_PREPARED_SELECTED_DOCS`.
+
+QB-1 target shape, locked on 2026-06-20, is a slightly-greater-than-1B
+parameter memory transformer for the governed 20B-token corpus. The working
+target is `vocab=32768`, `block=1024`, `n_layers=36`, `d_model=1536`,
+`heads=24` (`head_dim=64`), `ff_hidden=6144`, memory layers `8,16,24,32`,
+`memory_slots=1024`, `memory_key_dim=64`, `memory_value_dim=64`,
+`memory_top_k=4`, `memory_heads=1`, shared memory tables, memory-plus gating,
+sparse-row memory updates, and SMFT row masking. This shape is approximately
+1.05B trainable parameters with the current shared-memory-table implementation,
+not 1.05B dense-only parameters. The equivalent 36-layer all-dense transformer
+would be approximately 1.12B parameters; replacing four FFN blocks with memory
+blocks removes approximately 74M dense FFN parameters, while the shared
+trainable key/value memory tables add only approximately 0.13M parameters
+(`1024 x 64` key plus `1024 x 64` value). Memory projections plus those shared
+tables account for approximately 1.3M parameters. The smaller `d_model=1024`
+4-layer and 32-layer runs remain readiness, throughput, and evidence gates, not
+the final QB-1 target.
+
 Recommended production slice layout:
 
 ```text
@@ -1074,6 +1103,20 @@ Set `HEIRLOOM_RUN_LEARNING_SANITY_FIXTURES=1` to add explicit Rust-native
 `readiness validate-learning-sanity` passes for the ladder, LR/gradient sweep,
 and longer 32K blend fixtures. The worker uploads the resulting reports under
 `learning-sanity-fixtures/`, and `summary.json` records their URIs.
+
+Set `HEIRLOOM_RUN_LEARNING_SANITY_SWEEP=1`, or use
+`scripts/gcp/submit_vertex_learning_sanity_sweep.sh`, to run the live 4x A100
+LR/grad-accumulation sweep. The wrapper defaults to a dense LR grid around the
+current best point, `0.015,0.0125,0.01,0.0075`, crossed with grad accumulation
+`1,2`. The worker uploads `learning-sanity-sweep/lr-recommendation.json` and
+copies its contents into `summary.json` as `learning_sanity_sweep_recommendation`
+so the next longer 32K run can consume the recommended LR directly. Set
+`HEIRLOOM_LEARNING_SANITY_SWEEP_MIN_BEST_LOSS_REDUCTION` to make the validator
+fail if the best run does not clear a required winner threshold.
+
+Recorded improvement sweep: `heirloom-validate-quick-20260619-222355` / job
+`2884384020337000448` passed on 4x A100 and recommended
+`lr=0.015, grad_accumulation_steps=2` with `loss_reduction=0.797442`.
 
 The Vertex quick gate excludes the optional `heirloom-python` PyO3 binding crate because some Vertex Python images expose a non-PIC Python archive that cannot link a `cdylib`. Local validation still runs `cargo test --workspace` and the Python parity path separately.
 

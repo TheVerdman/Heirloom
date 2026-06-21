@@ -3453,6 +3453,22 @@ fn launcher_env_from_lookup(mut lookup: impl FnMut(&str) -> Option<String>) -> V
             "NCCL_IB_DISABLE",
             lookup("HEIRLOOM_NCCL_IB_DISABLE").or_else(|| Some("1".to_string())),
         ),
+        (
+            "NCCL_CUMEM_ENABLE",
+            lookup("HEIRLOOM_NCCL_CUMEM_ENABLE").or_else(|| lookup("NCCL_CUMEM_ENABLE")),
+        ),
+        (
+            "NCCL_CUMEM_HOST_ENABLE",
+            lookup("HEIRLOOM_NCCL_CUMEM_HOST_ENABLE").or_else(|| lookup("NCCL_CUMEM_HOST_ENABLE")),
+        ),
+        (
+            "NCCL_P2P_DISABLE",
+            lookup("HEIRLOOM_NCCL_P2P_DISABLE").or_else(|| lookup("NCCL_P2P_DISABLE")),
+        ),
+        (
+            "NCCL_P2P_LEVEL",
+            lookup("HEIRLOOM_NCCL_P2P_LEVEL").or_else(|| lookup("NCCL_P2P_LEVEL")),
+        ),
         ("HEIRLOOM_NCCL_TRACE", lookup("HEIRLOOM_NCCL_TRACE")),
     ]
     .into_iter()
@@ -10184,6 +10200,9 @@ fn validate_learning_sanity_lr_grad_accumulation_sweep(
         .get("min_loss_reduction")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(0.0);
+    let stage_min_best_loss_reduction = stage_object
+        .get("min_best_loss_reduction")
+        .and_then(serde_json::Value::as_f64);
     let stage_require_loss_improvement = stage_object
         .get("require_loss_improvement")
         .and_then(serde_json::Value::as_bool)
@@ -10192,6 +10211,8 @@ fn validate_learning_sanity_lr_grad_accumulation_sweep(
     let mut learning_rates = Vec::new();
     let mut grad_accumulation_steps = BTreeSet::new();
     let mut min_loss_reduction = f64::INFINITY;
+    let mut best_loss_reduction = f64::NEG_INFINITY;
+    let mut best_run_summary: Option<serde_json::Value> = None;
     let mut min_observed_world_size = usize::MAX;
     let mut run_reports = Vec::with_capacity(runs.len());
 
@@ -10308,7 +10329,7 @@ fn validate_learning_sanity_lr_grad_accumulation_sweep(
         learning_rates.push(learning_rate);
         grad_accumulation_steps.insert(grad_accumulation);
         min_observed_world_size = min_observed_world_size.min(world_size);
-        run_reports.push(serde_json::json!({
+        let run_summary = serde_json::json!({
             "label": run_label,
             "report": run_report_path.display().to_string(),
             "command": run_report_object.get("command").cloned().unwrap_or(serde_json::Value::Null),
@@ -10319,7 +10340,12 @@ fn validate_learning_sanity_lr_grad_accumulation_sweep(
             "initial_loss": loss.initial_loss,
             "final_loss": loss.final_loss,
             "loss_reduction": loss.loss_reduction,
-        }));
+        });
+        if loss.loss_reduction > best_loss_reduction {
+            best_loss_reduction = loss.loss_reduction;
+            best_run_summary = Some(run_summary.clone());
+        }
+        run_reports.push(run_summary);
     }
 
     let distinct_learning_rates = distinct_f64_values(&learning_rates);
@@ -10335,6 +10361,24 @@ fn validate_learning_sanity_lr_grad_accumulation_sweep(
             grad_accumulation_steps.len()
         )));
     }
+    if let Some(required_best_loss_reduction) = stage_min_best_loss_reduction {
+        if best_loss_reduction < required_best_loss_reduction {
+            return Err(TensorError::InvalidOperation(format!(
+                "stage {stage_id} best loss_reduction {best_loss_reduction} < required {required_best_loss_reduction}"
+            )));
+        }
+    }
+    let best_run_summary = best_run_summary.ok_or_else(|| {
+        TensorError::InvalidOperation(format!("stage {stage_id} sweep has no best run"))
+    })?;
+    let recommended_learning_rate = best_run_summary
+        .get("learning_rate")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let recommended_grad_accumulation_steps = best_run_summary
+        .get("grad_accumulation_steps")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
 
     Ok(serde_json::json!({
         "stage_index": index,
@@ -10347,7 +10391,12 @@ fn validate_learning_sanity_lr_grad_accumulation_sweep(
         "min_data_parallel_world_size": min_world_size,
         "min_observed_data_parallel_world_size": min_observed_world_size,
         "min_loss_reduction": stage_min_loss_reduction,
+        "min_best_loss_reduction": stage_min_best_loss_reduction,
         "loss_reduction": min_loss_reduction,
+        "best_loss_reduction": best_loss_reduction,
+        "recommended_learning_rate": recommended_learning_rate,
+        "recommended_grad_accumulation_steps": recommended_grad_accumulation_steps,
+        "best_run": best_run_summary,
     }))
 }
 
@@ -10706,12 +10755,14 @@ fn validate_learning_sanity_longer_32k_blend(
     require_json_str_equals(train_report, "command", "train-memory-lm")?;
     require_json_str_equals(train_report, "model_family", "memory_transformer")?;
     require_learning_sanity_training_loader(train_report, stage_id, "train_report")?;
-    require_learning_sanity_tokenizer_metadata(
-        tokenizer_report_object(train_report, stage_id, "train_report")?,
-        stage_id,
-        expected_vocab,
-        min_reserved_tokens,
-    )?;
+    if let Some(tokenizer) = optional_tokenizer_report_object(train_report) {
+        require_learning_sanity_tokenizer_metadata(
+            tokenizer,
+            stage_id,
+            expected_vocab,
+            min_reserved_tokens,
+        )?;
+    }
     require_json_usize_at_least(train_report, "final_step", min_final_step)?;
     validate_learning_sanity_report_expectations(stage_object, train_report, stage_id)?;
     let train_loss = validate_learning_sanity_report_loss(stage_id, train_report, 0.0, false)?;
@@ -10733,12 +10784,14 @@ fn validate_learning_sanity_longer_32k_blend(
     require_json_str_equals(resume_report, "command", "train-memory-lm")?;
     require_json_str_equals(resume_report, "model_family", "memory_transformer")?;
     require_learning_sanity_training_loader(resume_report, stage_id, "resume_report")?;
-    require_learning_sanity_tokenizer_metadata(
-        tokenizer_report_object(resume_report, stage_id, "resume_report")?,
-        stage_id,
-        expected_vocab,
-        min_reserved_tokens,
-    )?;
+    if let Some(tokenizer) = optional_tokenizer_report_object(resume_report) {
+        require_learning_sanity_tokenizer_metadata(
+            tokenizer,
+            stage_id,
+            expected_vocab,
+            min_reserved_tokens,
+        )?;
+    }
     let resume_final_step = json_field_usize(resume_report, "final_step")?;
     if resume_final_step <= json_field_usize(train_report, "final_step")? {
         return Err(TensorError::InvalidOperation(format!(
@@ -10872,14 +10925,20 @@ fn tokenizer_report_object<'a>(
     stage_id: &str,
     artifact_name: &str,
 ) -> Result<&'a serde_json::Map<String, serde_json::Value>> {
+    optional_tokenizer_report_object(report).ok_or_else(|| {
+        TensorError::InvalidOperation(format!(
+            "stage {stage_id} {artifact_name} requires tokenizer or tokenizer_report object"
+        ))
+    })
+}
+
+fn optional_tokenizer_report_object(
+    report: &serde_json::Map<String, serde_json::Value>,
+) -> Option<&serde_json::Map<String, serde_json::Value>> {
     report
         .get("tokenizer")
+        .or_else(|| report.get("tokenizer_report"))
         .and_then(serde_json::Value::as_object)
-        .ok_or_else(|| {
-            TensorError::InvalidOperation(format!(
-                "stage {stage_id} {artifact_name} requires tokenizer object"
-            ))
-        })
 }
 
 fn require_learning_sanity_tokenizer_metadata(
@@ -15006,11 +15065,50 @@ mod tests {
         assert_eq!(report["passed"], 1);
         assert_eq!(report["failed"], 0);
         assert_eq!(report["stages"][0]["loss_reduction"], 0.25);
+        assert_eq!(report["stages"][0]["best_loss_reduction"], 0.25);
+        assert_eq!(report["stages"][0]["recommended_learning_rate"], 0.001);
+        assert_eq!(
+            report["stages"][0]["recommended_grad_accumulation_steps"],
+            1
+        );
+        assert_eq!(report["stages"][0]["best_run"]["label"], "lr-0.001-ga-1");
         assert_eq!(report["stages"][0]["runs"].as_array().unwrap().len(), 4);
         assert_eq!(
             report["stages"][0]["min_observed_data_parallel_world_size"],
             4
         );
+    }
+
+    #[test]
+    fn learning_sanity_lr_grad_sweep_rejects_weak_best_run() {
+        let root = padawan_tmp_root("learning-sanity-lr-grad-weak-best");
+        write_learning_sanity_sweep_fixture(&root, 4, true);
+        write_test_json(
+            &root.join("ladder.json"),
+            serde_json::json!({
+                "format": LEARNING_SANITY_MANIFEST_FORMAT,
+                "version": 0,
+                "stages": [
+                    {
+                        "stage_id": "lr_grad_accumulation_sweep",
+                        "report": "lr-grad-sweep.json",
+                        "expected_command": "train-lm",
+                        "expected_model_family": "tiny_transformer",
+                        "expected_loader_kind": "binary_shard_streaming",
+                        "min_loss_reduction": 0.2,
+                        "min_best_loss_reduction": 0.3
+                    }
+                ]
+            }),
+        );
+        let report = validate_learning_sanity_manifest(&root.join("ladder.json")).unwrap();
+        assert_eq!(report["status"], "failed");
+        assert_eq!(report["passed"], 0);
+        assert_eq!(report["failed"], 1);
+        assert!(report["stages"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("best loss_reduction 0.25 < required 0.3"));
     }
 
     #[test]
@@ -15827,6 +15925,10 @@ mod tests {
         assert_eq!(env_value(&env, "NCCL_NET_PLUGIN").as_deref(), Some("none"));
         assert_eq!(env_value(&env, "NCCL_SOCKET_IFNAME").as_deref(), Some("lo"));
         assert_eq!(env_value(&env, "NCCL_IB_DISABLE").as_deref(), Some("1"));
+        assert!(env_value(&env, "NCCL_CUMEM_ENABLE").is_none());
+        assert!(env_value(&env, "NCCL_CUMEM_HOST_ENABLE").is_none());
+        assert!(env_value(&env, "NCCL_P2P_DISABLE").is_none());
+        assert!(env_value(&env, "NCCL_P2P_LEVEL").is_none());
         assert!(env_value(&env, "HEIRLOOM_NCCL_TRACE").is_none());
     }
 
@@ -15852,6 +15954,10 @@ mod tests {
             "HEIRLOOM_NCCL_SOCKET_IFNAME" => Some("eth0".to_string()),
             "HEIRLOOM_NCCL_IB_DISABLE" => Some("0".to_string()),
             "HEIRLOOM_NCCL_NET_PLUGIN" => Some("none".to_string()),
+            "HEIRLOOM_NCCL_CUMEM_ENABLE" => Some("0".to_string()),
+            "HEIRLOOM_NCCL_CUMEM_HOST_ENABLE" => Some("0".to_string()),
+            "HEIRLOOM_NCCL_P2P_DISABLE" => Some("1".to_string()),
+            "HEIRLOOM_NCCL_P2P_LEVEL" => Some("NVL".to_string()),
             "HEIRLOOM_NCCL_TRACE" => Some("1".to_string()),
             _ => None,
         });
@@ -15862,6 +15968,13 @@ mod tests {
         );
         assert_eq!(env_value(&env, "NCCL_IB_DISABLE").as_deref(), Some("0"));
         assert_eq!(env_value(&env, "NCCL_NET_PLUGIN").as_deref(), Some("none"));
+        assert_eq!(env_value(&env, "NCCL_CUMEM_ENABLE").as_deref(), Some("0"));
+        assert_eq!(
+            env_value(&env, "NCCL_CUMEM_HOST_ENABLE").as_deref(),
+            Some("0")
+        );
+        assert_eq!(env_value(&env, "NCCL_P2P_DISABLE").as_deref(), Some("1"));
+        assert_eq!(env_value(&env, "NCCL_P2P_LEVEL").as_deref(), Some("NVL"));
         assert_eq!(env_value(&env, "HEIRLOOM_NCCL_TRACE").as_deref(), Some("1"));
     }
 
