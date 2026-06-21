@@ -6,7 +6,7 @@ description = "A small Rust tensor/autograd runtime prototype built to expose Py
 license = "MIT OR Apache-2.0"
 
 [workspace]
-members = [".", "heirloom-kernels", "heirloom-python"]
+members = [".", "heirloom-kernels", "heirloom-python", "heirloom-skill"]
 resolver = "2"
 
 [lib]

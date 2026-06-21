@@ -1,0 +1,74 @@
+{
+  "entries": [
+    {
+      "skill_name": "spreadsheets",
+      "source_path": "heirloom-skill/examples/skills/spreadsheets/SKILL.md",
+      "source_url": null,
+      "source_commit": null,
+      "author": "Heirloom",
+      "organization": "Heirloom",
+      "license": "MIT OR Apache-2.0",
+      "license_status": "project_local",
+      "adoption_signals": ["example corpus"],
+      "trust_tier": "HeirloomCore",
+      "audit_status": "Passed",
+      "notes": "First-pass local spreadsheet skill."
+    },
+    {
+      "skill_name": "pdfs",
+      "source_path": "heirloom-skill/examples/skills/pdfs/SKILL.md",
+      "source_url": null,
+      "source_commit": null,
+      "author": "Heirloom",
+      "organization": "Heirloom",
+      "license": "MIT OR Apache-2.0",
+      "license_status": "project_local",
+      "adoption_signals": ["example corpus"],
+      "trust_tier": "HeirloomCore",
+      "audit_status": "Passed",
+      "notes": "First-pass local PDF skill."
+    },
+    {
+      "skill_name": "slides",
+      "source_path": "heirloom-skill/examples/skills/slides/SKILL.md",
+      "source_url": null,
+      "source_commit": null,
+      "author": "Heirloom",
+      "organization": "Heirloom",
+      "license": "MIT OR Apache-2.0",
+      "license_status": "project_local",
+      "adoption_signals": ["example corpus"],
+      "trust_tier": "HeirloomCore",
+      "audit_status": "Passed",
+      "notes": "First-pass local slides skill."
+    },
+    {
+      "skill_name": "code_editing",
+      "source_path": "heirloom-skill/examples/skills/code_editing/SKILL.md",
+      "source_url": null,
+      "source_commit": null,
+      "author": "Heirloom",
+      "organization": "Heirloom",
+      "license": "MIT OR Apache-2.0",
+      "license_status": "project_local",
+      "adoption_signals": ["example corpus"],
+      "trust_tier": "HeirloomCore",
+      "audit_status": "Passed",
+      "notes": "First-pass local code editing skill."
+    },
+    {
+      "skill_name": "email",
+      "source_path": "heirloom-skill/examples/skills/email/SKILL.md",
+      "source_url": null,
+      "source_commit": null,
+      "author": "Heirloom",
+      "organization": "Heirloom",
+      "license": "MIT OR Apache-2.0",
+      "license_status": "project_local",
+      "adoption_signals": ["example corpus"],
+      "trust_tier": "HeirloomCore",
+      "audit_status": "Passed",
+      "notes": "First-pass local email skill."
+    }
+  ]
+}
