@@ -251,10 +251,12 @@ External source licenses must be rechecked before production download. Raw
 external slices are private/internal training inputs, not redistributable
 artifacts. Dolma v1.7 is recorded as ODC-BY plus original source terms and is
 usable for this project when attribution and exact slice hashes are preserved.
-Nemotron-CC and Nemotron-CC-Math slices from
-`nvidia/Nemotron-Pretraining-Dataset-sample` are recorded as internal-training
-only under NVIDIA's Data Agreement; full-size NVIDIA objects outside that sample
-artifact still require separate evidence.
+Nemotron-CC and Nemotron-CC-Math are approved for internal training under
+NVIDIA's Data Agreement for Model Training (internal use on facts/ideas, no
+attribution required, no redistribution — already satisfied by private slices).
+The Agreement covers "Datasets, or any portions thereof," so full-size NVIDIA
+objects are governed by the same terms as the sample artifact; record the source
+URL and object hashes for whichever copy is pulled. See `QB_SOURCE_GOVERNANCE.md`.
 
 `heirloom data materialize-blend` is the bridge from source governance to the
 training loader. It rejects unapproved license statuses by default, requires
@@ -677,8 +679,43 @@ remaining high-count elementwise/layernorm families.
 This is a guarded target-shape gate, not default production routing; ragged
 flash backward, broader shape coverage, and tuning remain pending.
 
-The 40% MFU target should be treated as an optimization program after the
-training shape, tokenizer, and blend are stable.
+The prior 40% MFU target is retired. It implicitly assumes cuBLASLt/CUTLASS-class
+GEMM efficiency, which is out of reach for this stack's hand-rolled PTX kernels
+(no cuBLASLt/CUTLASS, by design). A realistic hand-rolled ceiling is roughly
+10-15% dense-core MFU, and MFU is treated as a diagnostic, not the goal.
+
+The operative gate is training cost, derived from the budget. For a first QB-1
+run under a ~$3-8k ceiling on 4x A100 spot (~$8/hr, leaning on the existing
+checkpoint/resume path) with a trimmed ~10-12B-token budget, the throughput
+target is roughly `5,000` tokens/sec measured on the real QB-1 shape
+(36 layers, `d_model=1536`, `ff_hidden=6144`), which is about 2-3% dense-core
+MFU. That is ~6-17x over the current real-shape trajectory and well under the
+hand-rolled ceiling. cuBLASLt is intentionally excluded to preserve the
+hand-rolled kernel stack.
+
+Important shape caveat: the measured `~6,079` tokens/sec throughput lane runs a
+4-layer `d_model=1024`, `ff_hidden=4096` systems shape (see
+`scripts/gcp/submit_vertex_qb_memory_throughput.sh`, `MEMORY_N_LAYERS=4`), which
+is about 20x fewer dense FLOPs/token than QB-1. Taken at face value that lane
+implies ~38 days for 20B tokens, but on the real QB-1 shape at the same kernel
+efficiency it extrapolates to only ~300-900 tokens/sec, i.e. ~8 months to ~2
+years for 20B tokens. So the throughput lane is a kernel gate, not a QB-1
+wall-clock estimate; the next throughput measurement must run the real QB-1 shape
+to set an honest baseline before scheduling any paid production run.
+
+The first optimization step under this gate is per-launch-family GPU time
+attribution. The runtime reports launch families by call count
+(`kernel_launch_families`) and now has an opt-in CUDA-event timing diagnostic:
+set `HEIRLOOM_CUDA_KERNEL_LAUNCH_FAMILY_TIMING=1` on the short throughput lane
+to add per-family `elapsed_us` plus total `kernel_launch_family_elapsed_us`.
+Validate those artifacts with
+`scripts/validate_qb_memory_throughput_artifacts.py
+--require-kernel-launch-family-timing`. The diagnostic synchronizes the compute
+stream after every kernel launch, so it is an attribution run rather than a
+comparable throughput/MFU measurement. The paid Vertex timing run has not yet
+been submitted. Prime suspect remains `matmul_strided_f32_reference` (f32
+non-Tensor-Core GEMM still on the training path, ~16-32x slower than BF16 MMA
+per call despite low launch count).
 
 ## Exit Criteria
 

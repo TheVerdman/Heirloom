@@ -908,6 +908,7 @@ def kernel_launch_family_metrics(report, limit=16):
     families = runtime.get("kernel_launch_families") or {}
     total_calls = as_int(runtime.get("kernel_launch_calls"))
     total_elements = as_int(runtime.get("kernel_launch_elements"))
+    total_elapsed_us = as_int(runtime.get("kernel_launch_family_elapsed_us"))
     rows = []
     if isinstance(families, dict):
         for label, stats in families.items():
@@ -915,14 +916,20 @@ def kernel_launch_family_metrics(report, limit=16):
                 continue
             calls = as_int(stats.get("calls"))
             elements = as_int(stats.get("elements"))
+            elapsed_us = as_int(stats.get("elapsed_us"))
             rows.append({
                 "label": label,
                 "calls": calls,
                 "elements": elements,
+                "elapsed_us": elapsed_us,
                 "call_share": safe_div(calls, total_calls),
                 "element_share": safe_div(elements, total_elements),
+                "elapsed_share": safe_div(elapsed_us, total_elapsed_us),
             })
-    rows.sort(key=lambda row: (-row["calls"], -row["elements"], row["label"]))
+    if any(row["elapsed_us"] > 0 for row in rows):
+        rows.sort(key=lambda row: (-row["elapsed_us"], -row["calls"], -row["elements"], row["label"]))
+    else:
+        rows.sort(key=lambda row: (-row["calls"], -row["elements"], row["label"]))
     return rows[:limit]
 
 truthy = {"1", "true", "TRUE", "yes", "YES", "on", "ON"}

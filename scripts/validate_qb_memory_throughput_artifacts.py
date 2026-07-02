@@ -289,7 +289,9 @@ def validate_cp_async(report: dict[str, Any], require_timing: bool) -> None:
         )
 
 
-def validate_kernel_launch_families(report: dict[str, Any]) -> list[dict[str, Any]]:
+def validate_kernel_launch_families(
+    report: dict[str, Any], *, require_timing: bool = False
+) -> list[dict[str, Any]]:
     rt = runtime(report)
     families = rt.get("kernel_launch_families") or {}
     require(isinstance(families, dict), f"kernel_launch_families is not an object: {families}")
@@ -299,11 +301,28 @@ def validate_kernel_launch_families(report: dict[str, Any]) -> list[dict[str, An
         require(isinstance(stats, dict), f"kernel launch family {label} is not an object: {stats}")
         calls = as_int(stats.get("calls"))
         elements = as_int(stats.get("elements"))
+        elapsed_us = as_int(stats.get("elapsed_us"))
         require(calls > 0, f"kernel launch family {label} has non-positive calls: {stats}")
-        rows.append({"label": label, "calls": calls, "elements": elements})
-    rows.sort(key=lambda row: (-row["calls"], -row["elements"], row["label"]))
+        rows.append(
+            {"label": label, "calls": calls, "elements": elements, "elapsed_us": elapsed_us}
+        )
+    has_elapsed_timing = any(row["elapsed_us"] > 0 for row in rows)
+    if require_timing:
+        require(has_elapsed_timing, f"kernel launch family timing missing: {families}")
+        require(
+            as_int(rt.get("kernel_launch_family_elapsed_us")) > 0,
+            f"kernel_launch_family_elapsed_us missing: {rt}",
+        )
+    rows.sort(
+        key=(
+            (lambda row: (-row["elapsed_us"], -row["calls"], -row["elements"], row["label"]))
+            if has_elapsed_timing
+            else (lambda row: (-row["calls"], -row["elements"], row["label"]))
+        )
+    )
     total_calls = sum(row["calls"] for row in rows)
     total_elements = sum(row["elements"] for row in rows)
+    total_elapsed_us = sum(row["elapsed_us"] for row in rows)
     require(
         total_calls == as_int(rt.get("kernel_launch_calls")),
         f"kernel launch family calls {total_calls} != kernel_launch_calls {rt.get('kernel_launch_calls')}",
@@ -313,6 +332,12 @@ def validate_kernel_launch_families(report: dict[str, Any]) -> list[dict[str, An
         "kernel launch family elements "
         + f"{total_elements} != kernel_launch_elements {rt.get('kernel_launch_elements')}",
     )
+    if as_int(rt.get("kernel_launch_family_elapsed_us")) > 0:
+        require(
+            total_elapsed_us == as_int(rt.get("kernel_launch_family_elapsed_us")),
+            "kernel launch family elapsed_us "
+            + f"{total_elapsed_us} != kernel_launch_family_elapsed_us {rt.get('kernel_launch_family_elapsed_us')}",
+        )
     return rows[:16]
 
 
@@ -392,6 +417,7 @@ def top_kernel_launch_families(report: dict[str, Any]) -> list[dict[str, Any]]:
     families = rt.get("kernel_launch_families") or {}
     total_calls = as_int(rt.get("kernel_launch_calls"))
     total_elements = as_int(rt.get("kernel_launch_elements"))
+    total_elapsed_us = as_int(rt.get("kernel_launch_family_elapsed_us"))
     rows: list[dict[str, Any]] = []
     if isinstance(families, dict):
         for label, stats in families.items():
@@ -399,16 +425,24 @@ def top_kernel_launch_families(report: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             calls = as_int(stats.get("calls"))
             elements = as_int(stats.get("elements"))
+            elapsed_us = as_int(stats.get("elapsed_us"))
             rows.append(
                 {
                     "label": label,
                     "calls": calls,
                     "elements": elements,
+                    "elapsed_us": elapsed_us,
                     "call_share": safe_div(calls, total_calls),
                     "element_share": safe_div(elements, total_elements),
+                    "elapsed_share": safe_div(elapsed_us, total_elapsed_us),
                 }
             )
-    rows.sort(key=lambda row: (-row["calls"], -row["elements"], row["label"]))
+    if any(row["elapsed_us"] > 0 for row in rows):
+        rows.sort(
+            key=lambda row: (-row["elapsed_us"], -row["calls"], -row["elements"], row["label"])
+        )
+    else:
+        rows.sort(key=lambda row: (-row["calls"], -row["elements"], row["label"]))
     return rows[:16]
 
 
@@ -421,6 +455,7 @@ def main() -> int:
     parser.add_argument("--require-cp-async-gemm", action="store_true")
     parser.add_argument("--require-cp-async-gemm-timing", action="store_true")
     parser.add_argument("--require-kernel-launch-families", action="store_true")
+    parser.add_argument("--require-kernel-launch-family-timing", action="store_true")
     parser.add_argument("--require-exact-tile-shape", action="store_true")
     parser.add_argument("--require-release", action="store_true")
     parser.add_argument("--min-block-size", type=int)
@@ -494,8 +529,10 @@ def main() -> int:
         if args.require_cp_async_gemm or args.require_cp_async_gemm_timing:
             validate_cp_async(measured, args.require_cp_async_gemm_timing)
         kernel_launch_families = (
-            validate_kernel_launch_families(measured)
-            if args.require_kernel_launch_families
+            validate_kernel_launch_families(
+                measured, require_timing=args.require_kernel_launch_family_timing
+            )
+            if args.require_kernel_launch_families or args.require_kernel_launch_family_timing
             else top_kernel_launch_families(measured)
         )
 

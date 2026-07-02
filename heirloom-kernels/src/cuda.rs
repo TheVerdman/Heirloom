@@ -57,6 +57,7 @@ static CUDA_KERNEL_LAUNCH_ELEMENTS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_KERNEL_LAUNCH_FAMILIES: OnceLock<
     Mutex<HashMap<&'static str, KernelLaunchFamilyStats>>,
 > = OnceLock::new();
+static CUDA_KERNEL_LAUNCH_FAMILY_TIMING_ENABLED: OnceLock<bool> = OnceLock::new();
 static CUDA_HOST_SYNC_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_STREAM_CREATE_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_STREAM_SYNC_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -345,12 +346,14 @@ pub struct CudaKernelLaunchFamilyCounter {
     pub label: String,
     pub calls: usize,
     pub elements: usize,
+    pub elapsed_us: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct KernelLaunchFamilyStats {
     calls: usize,
     elements: usize,
+    elapsed_us: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -374,6 +377,7 @@ pub struct TensorCoreCounters {
 pub struct CudaRuntimeCounters {
     pub kernel_launch_calls: usize,
     pub kernel_launch_elements: usize,
+    pub kernel_launch_family_elapsed_us: usize,
     pub kernel_launch_families: Vec<CudaKernelLaunchFamilyCounter>,
     pub host_sync_calls: usize,
     pub stream_create_calls: usize,
@@ -1415,6 +1419,17 @@ pub fn tensor_core_gemm_timing_enabled() -> bool {
     )
 }
 
+pub fn kernel_launch_family_timing_enabled() -> bool {
+    *CUDA_KERNEL_LAUNCH_FAMILY_TIMING_ENABLED.get_or_init(|| {
+        matches!(
+            std::env::var("HEIRLOOM_CUDA_KERNEL_LAUNCH_FAMILY_TIMING")
+                .ok()
+                .as_deref(),
+            Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+        )
+    })
+}
+
 pub fn tensor_core_ldmatrix_gemm_enabled() -> bool {
     matches!(
         std::env::var("HEIRLOOM_CUDA_TENSOR_CORE_LDMATRIX_GEMM")
@@ -1608,23 +1623,40 @@ fn cuda_kernel_launch_families() -> Vec<CudaKernelLaunchFamilyCounter> {
             label: (*label).to_string(),
             calls: stats.calls,
             elements: stats.elements,
+            elapsed_us: stats.elapsed_us,
         })
         .collect::<Vec<_>>();
+    let has_elapsed_timing = families.iter().any(|family| family.elapsed_us > 0);
     families.sort_by(|left, right| {
-        right
-            .calls
-            .cmp(&left.calls)
-            .then_with(|| right.elements.cmp(&left.elements))
-            .then_with(|| left.label.cmp(&right.label))
+        if has_elapsed_timing {
+            right
+                .elapsed_us
+                .cmp(&left.elapsed_us)
+                .then_with(|| right.calls.cmp(&left.calls))
+                .then_with(|| right.elements.cmp(&left.elements))
+                .then_with(|| left.label.cmp(&right.label))
+        } else {
+            right
+                .calls
+                .cmp(&left.calls)
+                .then_with(|| right.elements.cmp(&left.elements))
+                .then_with(|| left.label.cmp(&right.label))
+        }
     });
     families
 }
 
 pub fn cuda_runtime_counters() -> CudaRuntimeCounters {
+    let kernel_launch_families = cuda_kernel_launch_families();
+    let kernel_launch_family_elapsed_us = kernel_launch_families
+        .iter()
+        .map(|family| family.elapsed_us)
+        .sum();
     CudaRuntimeCounters {
         kernel_launch_calls: CUDA_KERNEL_LAUNCH_CALLS.load(Ordering::Relaxed),
         kernel_launch_elements: CUDA_KERNEL_LAUNCH_ELEMENTS.load(Ordering::Relaxed),
-        kernel_launch_families: cuda_kernel_launch_families(),
+        kernel_launch_family_elapsed_us,
+        kernel_launch_families,
         host_sync_calls: CUDA_HOST_SYNC_CALLS.load(Ordering::Relaxed),
         stream_create_calls: CUDA_STREAM_CREATE_CALLS.load(Ordering::Relaxed),
         stream_sync_calls: CUDA_STREAM_SYNC_CALLS.load(Ordering::Relaxed),
@@ -7646,7 +7678,7 @@ fn evict_stream_for_context(context: CUcontext) {
     });
 }
 
-fn record_kernel_launch(label: &'static str, elements: usize) {
+fn record_kernel_launch_with_elapsed_us(label: &'static str, elements: usize, elapsed_us: usize) {
     CUDA_KERNEL_LAUNCH_CALLS.fetch_add(1, Ordering::Relaxed);
     CUDA_KERNEL_LAUNCH_ELEMENTS.fetch_add(elements, Ordering::Relaxed);
     let mut stats = kernel_launch_family_stats()
@@ -7655,6 +7687,67 @@ fn record_kernel_launch(label: &'static str, elements: usize) {
     let entry = stats.entry(label).or_default();
     entry.calls = entry.calls.saturating_add(1);
     entry.elements = entry.elements.saturating_add(elements);
+    entry.elapsed_us = entry.elapsed_us.saturating_add(elapsed_us);
+}
+
+fn start_kernel_launch_family_timer(
+    driver: &CudaDriver,
+    stream: CUstream,
+) -> CudaResult<(CUcontext, CUevent, CUevent)> {
+    let context = driver.current_context()?;
+    let start = create_timing_event(driver)?;
+    let stop = match create_timing_event(driver) {
+        Ok(event) => event,
+        Err(err) => {
+            destroy_event(driver, context, start);
+            return Err(err);
+        }
+    };
+    // SAFETY: start and stream are live CUDA objects for the current context.
+    if let Err(err) = check(
+        unsafe { (driver.cu_event_record)(start, stream) },
+        "cuEventRecord kernel launch family start",
+    ) {
+        destroy_event(driver, context, start);
+        destroy_event(driver, context, stop);
+        return Err(err);
+    }
+    CUDA_EVENT_RECORD_CALLS.fetch_add(1, Ordering::Relaxed);
+    Ok((context, start, stop))
+}
+
+fn stop_kernel_launch_family_timer(
+    driver: &CudaDriver,
+    stream: CUstream,
+    timer: (CUcontext, CUevent, CUevent),
+) -> CudaResult<usize> {
+    let (context, start, stop) = timer;
+    let result = (|| {
+        // SAFETY: stop and stream are live CUDA objects for the current context.
+        check(
+            unsafe { (driver.cu_event_record)(stop, stream) },
+            "cuEventRecord kernel launch family stop",
+        )?;
+        CUDA_EVENT_RECORD_CALLS.fetch_add(1, Ordering::Relaxed);
+        // SAFETY: stream is live and belongs to the current context.
+        check(
+            unsafe { (driver.cu_stream_synchronize)(stream) },
+            "cuStreamSynchronize kernel launch family timer",
+        )?;
+        CUDA_HOST_SYNC_CALLS.fetch_add(1, Ordering::Relaxed);
+        CUDA_STREAM_SYNC_CALLS.fetch_add(1, Ordering::Relaxed);
+        let mut elapsed_ms = 0.0f32;
+        // SAFETY: start and stop are completed timing events in the same context.
+        check(
+            unsafe { (driver.cu_event_elapsed_time)(&mut elapsed_ms, start, stop) },
+            "cuEventElapsedTime kernel launch family",
+        )?;
+        CUDA_EVENT_ELAPSED_CALLS.fetch_add(1, Ordering::Relaxed);
+        Ok((elapsed_ms * 1000.0).max(0.0) as usize)
+    })();
+    destroy_event(driver, context, start);
+    destroy_event(driver, context, stop);
+    result
 }
 
 fn allocation_from_cache(device_ordinal: i32, bytes: usize) -> Option<CudaAllocation> {
@@ -8432,8 +8525,13 @@ fn launch_kernel_on_current_stream(
     params: &mut [*mut c_void],
 ) -> CudaResult<()> {
     let stream = compute_stream_for_current_context(driver)?;
+    let family_timer = if kernel_launch_family_timing_enabled() {
+        Some(start_kernel_launch_family_timer(driver, stream)?)
+    } else {
+        None
+    };
     // SAFETY: function is a valid CUDA kernel, params point to live kernel argument values, and stream belongs to the current context.
-    check(
+    let launch_result = check(
         unsafe {
             (driver.cu_launch_kernel)(
                 function,
@@ -8450,8 +8548,20 @@ fn launch_kernel_on_current_stream(
             )
         },
         "cuLaunchKernel",
-    )?;
-    record_kernel_launch(config.label, config.elements);
+    );
+    if let Err(err) = launch_result {
+        if let Some((context, start, stop)) = family_timer {
+            destroy_event(driver, context, start);
+            destroy_event(driver, context, stop);
+        }
+        return Err(err);
+    }
+    let elapsed_us = if let Some(timer) = family_timer {
+        stop_kernel_launch_family_timer(driver, stream, timer)?
+    } else {
+        0
+    };
+    record_kernel_launch_with_elapsed_us(config.label, config.elements, elapsed_us);
     Ok(())
 }
 

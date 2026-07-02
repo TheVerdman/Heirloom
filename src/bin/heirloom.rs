@@ -6372,6 +6372,7 @@ fn aggregate_rank_cuda_runtime(rank_reports: &[serde_json::Value]) -> serde_json
     let fields = [
         "kernel_launch_calls",
         "kernel_launch_elements",
+        "kernel_launch_family_elapsed_us",
         "host_sync_calls",
         "stream_create_calls",
         "stream_sync_calls",
@@ -6480,7 +6481,7 @@ fn aggregate_rank_cuda_runtime(rank_reports: &[serde_json::Value]) -> serde_json
             .sum::<u64>();
         object.insert(field.to_string(), serde_json::Value::from(value));
     }
-    let mut family_totals: std::collections::BTreeMap<String, (u64, u64)> =
+    let mut family_totals: std::collections::BTreeMap<String, (u64, u64, u64)> =
         std::collections::BTreeMap::new();
     for report in rank_reports {
         let Some(families) = report
@@ -6499,29 +6500,46 @@ fn aggregate_rank_cuda_runtime(rank_reports: &[serde_json::Value]) -> serde_json
                 .get("elements")
                 .and_then(serde_json::Value::as_u64)
                 .unwrap_or(0);
-            let entry = family_totals.entry(label.clone()).or_insert((0, 0));
+            let elapsed_us = stats
+                .get("elapsed_us")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            let entry = family_totals.entry(label.clone()).or_insert((0, 0, 0));
             entry.0 = entry.0.saturating_add(calls);
             entry.1 = entry.1.saturating_add(elements);
+            entry.2 = entry.2.saturating_add(elapsed_us);
         }
     }
     let mut family_values = family_totals
         .into_iter()
-        .collect::<Vec<(String, (u64, u64))>>();
+        .collect::<Vec<(String, (u64, u64, u64))>>();
+    let has_elapsed_timing = family_values.iter().any(|(_, stats)| stats.2 > 0);
     family_values.sort_by(|left, right| {
-        right
-            .1
-             .0
-            .cmp(&left.1 .0)
-            .then_with(|| right.1 .1.cmp(&left.1 .1))
-            .then_with(|| left.0.cmp(&right.0))
+        let (left_label, left_stats) = left;
+        let (right_label, right_stats) = right;
+        if has_elapsed_timing {
+            right_stats
+                .2
+                .cmp(&left_stats.2)
+                .then_with(|| right_stats.0.cmp(&left_stats.0))
+                .then_with(|| right_stats.1.cmp(&left_stats.1))
+                .then_with(|| left_label.cmp(right_label))
+        } else {
+            right_stats
+                .0
+                .cmp(&left_stats.0)
+                .then_with(|| right_stats.1.cmp(&left_stats.1))
+                .then_with(|| left_label.cmp(right_label))
+        }
     });
     let mut families = serde_json::Map::new();
-    for (label, (calls, elements)) in family_values {
+    for (label, (calls, elements, elapsed_us)) in family_values {
         families.insert(
             label,
             serde_json::json!({
                 "calls": calls,
                 "elements": elements,
+                "elapsed_us": elapsed_us,
             }),
         );
     }
@@ -14178,6 +14196,7 @@ fn cuda_runtime_counters_json(counters: cuda::CudaRuntimeCounters) -> serde_json
             serde_json::json!({
                 "calls": family.calls,
                 "elements": family.elements,
+                "elapsed_us": family.elapsed_us,
             }),
         );
     }
@@ -14267,6 +14286,7 @@ fn cuda_runtime_counters_json(counters: cuda::CudaRuntimeCounters) -> serde_json
         "flash_bf16_tensor_core_causal_masked_tile_count": counters.flash_bf16_tensor_core_causal_masked_tile_count,
         "flash_bf16_tensor_core_elapsed_us": counters.flash_bf16_tensor_core_elapsed_us,
     });
+    json["kernel_launch_family_elapsed_us"] = counters.kernel_launch_family_elapsed_us.into();
     let object = json
         .as_object_mut()
         .expect("cuda runtime counters JSON is an object");
@@ -15461,9 +15481,10 @@ mod tests {
         let rank_reports = vec![
             serde_json::json!({
                 "cuda_runtime": {
+                    "kernel_launch_family_elapsed_us": 800,
                     "kernel_launch_families": {
-                        "rank2_elementwise": {"calls": 3, "elements": 30},
-                        "tensor_core_gemm_cp_async": {"calls": 5, "elements": 50}
+                        "rank2_elementwise": {"calls": 3, "elements": 30, "elapsed_us": 300},
+                        "tensor_core_gemm_cp_async": {"calls": 5, "elements": 50, "elapsed_us": 500}
                     },
                     "flash_bf16_tensor_core_backward_requested_calls": 1,
                     "flash_bf16_tensor_core_backward_executed_calls": 2,
@@ -15482,9 +15503,10 @@ mod tests {
             }),
             serde_json::json!({
                 "cuda_runtime": {
+                    "kernel_launch_family_elapsed_us": 1800,
                     "kernel_launch_families": {
-                        "rank2_elementwise": {"calls": 7, "elements": 70},
-                        "flash_attention_bf16_tensor_core_backward": {"calls": 11, "elements": 110}
+                        "rank2_elementwise": {"calls": 7, "elements": 70, "elapsed_us": 700},
+                        "flash_attention_bf16_tensor_core_backward": {"calls": 11, "elements": 110, "elapsed_us": 1100}
                     },
                     "flash_bf16_tensor_core_backward_requested_calls": 10,
                     "flash_bf16_tensor_core_backward_executed_calls": 20,
@@ -15514,6 +15536,10 @@ mod tests {
             100
         );
         assert_eq!(
+            report["kernel_launch_families"]["rank2_elementwise"]["elapsed_us"],
+            1000
+        );
+        assert_eq!(
             report["kernel_launch_families"]["tensor_core_gemm_cp_async"]["calls"],
             5
         );
@@ -15521,6 +15547,7 @@ mod tests {
             report["kernel_launch_families"]["flash_attention_bf16_tensor_core_backward"]["calls"],
             11
         );
+        assert_eq!(report["kernel_launch_family_elapsed_us"], 2600);
         assert_eq!(
             report["flash_bf16_tensor_core_backward_requested_calls"],
             11
@@ -15657,6 +15684,7 @@ mod tests {
         assert_eq!(json["tensor_core_cp_async_gemm_hard_require_failures"], 0);
         assert_eq!(json["tensor_core_cp_async_gemm_instructions"], 0);
         assert_eq!(json["tensor_core_cp_async_gemm_elapsed_us"], 0);
+        assert_eq!(json["kernel_launch_family_elapsed_us"], 0);
         assert!(json["kernel_launch_families"]
             .as_object()
             .expect("kernel launch families is an object")

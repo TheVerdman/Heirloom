@@ -832,8 +832,8 @@ CUDA. Rank 0 recorded `19942` kernel launches and `3232` syncs in the measured
 window, so the next MFU diagnostic should attribute launch families and then
 fuse/reduce the dominant small kernels.
 
-For a short diagnostic run that attributes kernel launch families, keep GEMM
-timing disabled and reduce the warmup/measured steps:
+For the historical count-only launch-family diagnostic, keep GEMM timing
+disabled and reduce the warmup/measured steps:
 
 ```bash
 HEIRLOOM_QB_DATA_HARDPATH_STEPS=2 \
@@ -853,6 +853,41 @@ python3 scripts/validate_qb_memory_throughput_artifacts.py \
   --require-flash-timing \
   --require-cp-async-gemm \
   --require-kernel-launch-families \
+  --require-exact-tile-shape \
+  --require-release \
+  --min-block-size 1024 \
+  --min-d-model 1024 \
+  --min-head-dim 64 \
+  --min-grad-accumulation-steps 4 \
+  --min-warmup-steps 2 \
+  --min-measured-steps 8 \
+  --min-tokens-seen 131072 \
+  gs://.../qb-data-hardpath/summary.json
+```
+
+For elapsed-time launch-family attribution, additionally enable per-launch CUDA
+event timing. This synchronizes the compute stream after every kernel launch, so
+use it only on the short diagnostic lane and do not compare its tokens/sec to
+normal throughput runs:
+
+```bash
+HEIRLOOM_QB_DATA_HARDPATH_STEPS=2 \
+HEIRLOOM_QB_DATA_HARDPATH_RESUME_STEPS=8 \
+HEIRLOOM_QB_DATA_HARDPATH_LOG_EVERY=1 \
+HEIRLOOM_QB_DATA_HARDPATH_RESUME_LOG_EVERY=4 \
+HEIRLOOM_CUDA_KERNEL_LAUNCH_FAMILY_TIMING=1 \
+scripts/gcp/submit_vertex_qb_memory_throughput.sh
+```
+
+Validate elapsed attribution with `--require-kernel-launch-family-timing`:
+
+```bash
+python3 scripts/validate_qb_memory_throughput_artifacts.py \
+  --expected-world-size 4 \
+  --require-flash-attention \
+  --require-flash-timing \
+  --require-cp-async-gemm \
+  --require-kernel-launch-family-timing \
   --require-exact-tile-shape \
   --require-release \
   --min-block-size 1024 \
