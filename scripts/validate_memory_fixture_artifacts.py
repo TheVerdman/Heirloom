@@ -9,7 +9,6 @@ import math
 from pathlib import Path
 from typing import Any
 
-
 SPARSE_TRANSPORT_FIELDS = [
     "row_union_all_reduce_calls",
     "row_union_all_reduce_bytes",

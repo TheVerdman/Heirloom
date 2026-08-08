@@ -1,5 +1,9 @@
 # Padawan Loop Design
 
+> Experimental side track. Cloud paths are placeholders for caller-owned
+> infrastructure; this workflow is outside the committee review and validation
+> path.
+
 Status: draft sidecar design
 Date: 2026-06-11
 
@@ -67,7 +71,7 @@ The first implementation should live under sidecar artifact roots such as:
 
 ```text
 runs/padawan-loop/
-gs://vecl-qb-artifacts/padawan-loop/
+gs://<artifact-bucket>/padawan-loop/
 ```
 
 Derived token shards, if added later, should be separate from the production

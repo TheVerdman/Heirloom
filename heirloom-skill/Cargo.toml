@@ -2,8 +2,12 @@
 name = "heirloom-skill"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.95"
 description = "Rust-native compiler and runtime pipeline for Heirloom SKILL.md artifacts."
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/TheVerdman/Heirloom"
+readme = "README.md"
+publish = false
 
 [lib]
 name = "heirloom_skill"

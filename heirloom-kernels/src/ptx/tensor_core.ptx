@@ -1,0 +1,4649 @@
+
+.version 7.8
+.target sm_80
+.address_size 64
+
+.visible .entry heirloom_bf16_mma_probe(
+    .param .u64 output
+)
+{
+    .reg .b32 %r<8>;
+    .reg .b64 %rd<4>;
+    .reg .f32 %f<9>;
+
+    ld.param.u64 %rd1, [output];
+    mov.u32 %r1, %tid.x;
+
+    // Packed BF16 1.0 values: high 16 bits = 0x3f80, low 16 bits = 0x3f80.
+    mov.u32 %r2, 1065369472;
+    mov.u32 %r3, 1065369472;
+    mov.u32 %r4, 1065369472;
+    mov.u32 %r5, 1065369472;
+    mov.u32 %r6, 1065369472;
+    mov.u32 %r7, 1065369472;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r2, %r3, %r4, %r5},
+        {%r6, %r7},
+        {%f1, %f2, %f3, %f4};
+
+    mul.wide.u32 %rd2, %r1, 4;
+    add.s64 %rd3, %rd1, %rd2;
+    st.global.f32 [%rd3], %f5;
+    ret;
+}
+
+.visible .entry heirloom_matmul_bf16_mma_rhs_t_f32(
+    .param .u64 left,
+    .param .u64 right,
+    .param .u64 output,
+    .param .u32 m,
+    .param .u32 k,
+    .param .u32 n
+)
+{
+    .reg .pred %p<2>;
+    .reg .b32 %r<80>;
+    .reg .b64 %rd<80>;
+    .reg .f32 %f<9>;
+
+    ld.param.u64 %rd1, [left];
+    ld.param.u64 %rd2, [right];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [m];
+    ld.param.u32 %r5, [k];
+    ld.param.u32 %r6, [n];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    shr.u32 %r13, %r10, 2;
+    and.b32 %r14, %r10, 3;
+    shl.b32 %r15, %r12, 4;
+    shl.b32 %r16, %r11, 3;
+    shl.b32 %r18, %r14, 1;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+MMA_RHS_T_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra MMA_RHS_T_STORE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r17, %r18;
+    mad.lo.u32 %r21, %r19, %r5, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r22, [%rd5];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r5, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r5, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r22, [%rd5];
+    mad.lo.u32 %r21, %r19, %r5, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r5, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r22, [%rd5];
+    mad.lo.u32 %r21, %r19, %r5, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r5, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r22, [%rd5];
+    mad.lo.u32 %r21, %r19, %r5, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r16, %r13;
+    add.u32 %r20, %r17, %r18;
+    mad.lo.u32 %r21, %r26, %r5, %r20;
+    mul.wide.u32 %rd6, %r21, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r22, [%rd7];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r5, %r23;
+    mul.wide.u32 %rd6, %r21, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r24, [%rd7];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r5, %r20;
+    mul.wide.u32 %rd6, %r21, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r22, [%rd7];
+    mad.lo.u32 %r21, %r26, %r5, %r23;
+    mul.wide.u32 %rd6, %r21, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r24, [%rd7];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    add.u32 %r17, %r17, 16;
+    bra MMA_RHS_T_K_LOOP;
+
+MMA_RHS_T_STORE:
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd8, %r21, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f1;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd8, %r21, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd8, %r21, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f3;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd8, %r21, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f4;
+    ret;
+}
+
+.visible .entry heirloom_matmul_bf16_mma_rhs_t_f32_cta(
+    .param .u64 left,
+    .param .u64 right,
+    .param .u64 output,
+    .param .u32 m,
+    .param .u32 k,
+    .param .u32 n
+)
+{
+    .reg .pred %p<5>;
+    .reg .b32 %r<90>;
+    .reg .b64 %rd<80>;
+    .reg .f32 %f<9>;
+
+    ld.param.u64 %rd1, [left];
+    ld.param.u64 %rd2, [right];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [m];
+    ld.param.u32 %r5, [k];
+    ld.param.u32 %r6, [n];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    shr.u32 %r70, %r10, 5;
+    and.b32 %r71, %r10, 31;
+    shr.u32 %r72, %r70, 1;
+    and.b32 %r73, %r70, 1;
+    shr.u32 %r13, %r71, 2;
+    and.b32 %r14, %r71, 3;
+    shl.b32 %r15, %r12, 5;
+    shl.b32 %r74, %r72, 4;
+    add.u32 %r15, %r15, %r74;
+    shl.b32 %r16, %r11, 4;
+    shl.b32 %r75, %r73, 3;
+    add.u32 %r16, %r16, %r75;
+    setp.ge.u32 %p2, %r15, %r4;
+    @%p2 bra MMA_RHS_T_CTA_DONE;
+    setp.ge.u32 %p3, %r16, %r6;
+    @%p3 bra MMA_RHS_T_CTA_DONE;
+    shl.b32 %r18, %r14, 1;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+MMA_RHS_T_CTA_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra MMA_RHS_T_CTA_STORE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r17, %r18;
+    mad.lo.u32 %r21, %r19, %r5, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r22, [%rd5];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r5, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r5, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r22, [%rd5];
+    mad.lo.u32 %r21, %r19, %r5, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r5, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r22, [%rd5];
+    mad.lo.u32 %r21, %r19, %r5, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r5, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r22, [%rd5];
+    mad.lo.u32 %r21, %r19, %r5, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r16, %r13;
+    add.u32 %r20, %r17, %r18;
+    mad.lo.u32 %r21, %r26, %r5, %r20;
+    mul.wide.u32 %rd6, %r21, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r22, [%rd7];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r5, %r23;
+    mul.wide.u32 %rd6, %r21, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r24, [%rd7];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r5, %r20;
+    mul.wide.u32 %rd6, %r21, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r22, [%rd7];
+    mad.lo.u32 %r21, %r26, %r5, %r23;
+    mul.wide.u32 %rd6, %r21, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r24, [%rd7];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    add.u32 %r17, %r17, 16;
+    bra MMA_RHS_T_CTA_K_LOOP;
+
+MMA_RHS_T_CTA_STORE:
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd8, %r21, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f1;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd8, %r21, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd8, %r21, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f3;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd8, %r21, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f4;
+MMA_RHS_T_CTA_DONE:
+    ret;
+}
+
+.visible .entry heirloom_matmul_bf16_mma_rhs_t_f32_cta_staged(
+    .param .u64 left,
+    .param .u64 right,
+    .param .u64 output,
+    .param .u32 m,
+    .param .u32 k,
+    .param .u32 n
+)
+{
+    .reg .pred %p<10>;
+    .reg .b32 %r<130>;
+    .reg .b64 %rd<100>;
+    .reg .f32 %f<9>;
+    .shared .align 4 .b8 heirloom_matmul_cta_smem_a[1024];
+    .shared .align 4 .b8 heirloom_matmul_cta_smem_b[512];
+
+    ld.param.u64 %rd1, [left];
+    ld.param.u64 %rd2, [right];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [m];
+    ld.param.u32 %r5, [k];
+    ld.param.u32 %r6, [n];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    shr.u32 %r70, %r10, 5;
+    and.b32 %r71, %r10, 31;
+    shr.u32 %r72, %r70, 1;
+    and.b32 %r73, %r70, 1;
+    shr.u32 %r13, %r71, 2;
+    and.b32 %r14, %r71, 3;
+    shl.b32 %r80, %r12, 5;
+    shl.b32 %r81, %r11, 4;
+    shl.b32 %r74, %r72, 4;
+    shl.b32 %r75, %r73, 3;
+    add.u32 %r15, %r80, %r74;
+    add.u32 %r16, %r81, %r75;
+    shl.b32 %r18, %r14, 1;
+    mov.u32 %r89, 16;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+MMA_RHS_T_CTA_STAGED_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra MMA_RHS_T_CTA_STAGED_STORE;
+
+    mov.u32 %r90, %r10;
+MMA_RHS_T_CTA_STAGE_A_LOOP:
+    setp.ge.u32 %p4, %r90, 512;
+    @%p4 bra MMA_RHS_T_CTA_STAGE_A_DONE;
+    div.u32 %r91, %r90, %r89;
+    rem.u32 %r92, %r90, %r89;
+    add.u32 %r93, %r80, %r91;
+    add.u32 %r94, %r17, %r92;
+    setp.ge.u32 %p5, %r93, %r4;
+    setp.ge.u32 %p6, %r94, %r5;
+    or.pred %p7, %p5, %p6;
+    mov.u32 %r95, 0;
+    @%p7 bra MMA_RHS_T_CTA_STAGE_A_STORE;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd1, %rd20;
+    ld.global.u16 %r95, [%rd21];
+MMA_RHS_T_CTA_STAGE_A_STORE:
+    mul.wide.u32 %rd22, %r90, 2;
+    mov.u64 %rd23, heirloom_matmul_cta_smem_a;
+    add.s64 %rd24, %rd23, %rd22;
+    st.shared.u16 [%rd24], %r95;
+    add.u32 %r90, %r90, 128;
+    bra MMA_RHS_T_CTA_STAGE_A_LOOP;
+MMA_RHS_T_CTA_STAGE_A_DONE:
+
+    mov.u32 %r90, %r10;
+MMA_RHS_T_CTA_STAGE_B_LOOP:
+    setp.ge.u32 %p4, %r90, 256;
+    @%p4 bra MMA_RHS_T_CTA_STAGE_B_DONE;
+    div.u32 %r91, %r90, %r89;
+    rem.u32 %r92, %r90, %r89;
+    add.u32 %r93, %r81, %r91;
+    add.u32 %r94, %r17, %r92;
+    setp.ge.u32 %p5, %r93, %r6;
+    setp.ge.u32 %p6, %r94, %r5;
+    or.pred %p7, %p5, %p6;
+    mov.u32 %r95, 0;
+    @%p7 bra MMA_RHS_T_CTA_STAGE_B_STORE;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd2, %rd20;
+    ld.global.u16 %r95, [%rd21];
+MMA_RHS_T_CTA_STAGE_B_STORE:
+    mul.wide.u32 %rd22, %r90, 2;
+    mov.u64 %rd23, heirloom_matmul_cta_smem_b;
+    add.s64 %rd24, %rd23, %rd22;
+    st.shared.u16 [%rd24], %r95;
+    add.u32 %r90, %r90, 128;
+    bra MMA_RHS_T_CTA_STAGE_B_LOOP;
+MMA_RHS_T_CTA_STAGE_B_DONE:
+
+    bar.sync 0;
+
+    add.u32 %r19, %r74, %r13;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r19, %r89, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    mov.u64 %rd5, heirloom_matmul_cta_smem_a;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r89, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r89, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    mad.lo.u32 %r21, %r19, %r89, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r74, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r89, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    mad.lo.u32 %r21, %r19, %r89, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r89, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    mad.lo.u32 %r21, %r19, %r89, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r75, %r13;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    mov.u64 %rd8, heirloom_matmul_cta_smem_b;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    bar.sync 0;
+    add.u32 %r17, %r17, 16;
+    bra MMA_RHS_T_CTA_STAGED_K_LOOP;
+
+MMA_RHS_T_CTA_STAGED_STORE:
+    setp.ge.u32 %p2, %r15, %r4;
+    setp.ge.u32 %p3, %r16, %r6;
+    or.pred %p4, %p2, %p3;
+    @%p4 bra MMA_RHS_T_CTA_STAGED_DONE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f1;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f3;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f4;
+MMA_RHS_T_CTA_STAGED_DONE:
+    ret;
+}
+
+.visible .entry heirloom_matmul_bf16_mma_normal_rhs_f32_cta_staged(
+    .param .u64 left,
+    .param .u64 right,
+    .param .u64 output,
+    .param .u32 m,
+    .param .u32 k,
+    .param .u32 n
+)
+{
+    .reg .pred %p<10>;
+    .reg .b32 %r<130>;
+    .reg .b64 %rd<100>;
+    .reg .f32 %f<9>;
+    .shared .align 4 .b8 heirloom_matmul_normal_rhs_smem_a[1024];
+    .shared .align 4 .b8 heirloom_matmul_normal_rhs_smem_b[512];
+
+    ld.param.u64 %rd1, [left];
+    ld.param.u64 %rd2, [right];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [m];
+    ld.param.u32 %r5, [k];
+    ld.param.u32 %r6, [n];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    shr.u32 %r70, %r10, 5;
+    and.b32 %r71, %r10, 31;
+    shr.u32 %r72, %r70, 1;
+    and.b32 %r73, %r70, 1;
+    shr.u32 %r13, %r71, 2;
+    and.b32 %r14, %r71, 3;
+    shl.b32 %r80, %r12, 5;
+    shl.b32 %r81, %r11, 4;
+    shl.b32 %r74, %r72, 4;
+    shl.b32 %r75, %r73, 3;
+    add.u32 %r15, %r80, %r74;
+    add.u32 %r16, %r81, %r75;
+    shl.b32 %r18, %r14, 1;
+    mov.u32 %r89, 16;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+MMA_NORMAL_RHS_CTA_STAGED_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra MMA_NORMAL_RHS_CTA_STAGED_STORE;
+
+    mov.u32 %r90, %r10;
+MMA_NORMAL_RHS_CTA_STAGE_A_LOOP:
+    setp.ge.u32 %p4, %r90, 512;
+    @%p4 bra MMA_NORMAL_RHS_CTA_STAGE_A_DONE;
+    div.u32 %r91, %r90, %r89;
+    rem.u32 %r92, %r90, %r89;
+    add.u32 %r93, %r80, %r91;
+    add.u32 %r94, %r17, %r92;
+    setp.ge.u32 %p5, %r93, %r4;
+    setp.ge.u32 %p6, %r94, %r5;
+    or.pred %p7, %p5, %p6;
+    mov.u32 %r95, 0;
+    @%p7 bra MMA_NORMAL_RHS_CTA_STAGE_A_STORE;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd1, %rd20;
+    ld.global.u16 %r95, [%rd21];
+MMA_NORMAL_RHS_CTA_STAGE_A_STORE:
+    mul.wide.u32 %rd22, %r90, 2;
+    mov.u64 %rd23, heirloom_matmul_normal_rhs_smem_a;
+    add.s64 %rd24, %rd23, %rd22;
+    st.shared.u16 [%rd24], %r95;
+    add.u32 %r90, %r90, 128;
+    bra MMA_NORMAL_RHS_CTA_STAGE_A_LOOP;
+MMA_NORMAL_RHS_CTA_STAGE_A_DONE:
+
+    mov.u32 %r90, %r10;
+MMA_NORMAL_RHS_CTA_STAGE_B_LOOP:
+    setp.ge.u32 %p4, %r90, 256;
+    @%p4 bra MMA_NORMAL_RHS_CTA_STAGE_B_DONE;
+    div.u32 %r91, %r90, %r89;
+    rem.u32 %r92, %r90, %r89;
+    add.u32 %r93, %r81, %r91;
+    add.u32 %r94, %r17, %r92;
+    setp.ge.u32 %p5, %r93, %r6;
+    setp.ge.u32 %p6, %r94, %r5;
+    or.pred %p7, %p5, %p6;
+    mov.u32 %r95, 0;
+    @%p7 bra MMA_NORMAL_RHS_CTA_STAGE_B_STORE;
+    mad.lo.u32 %r96, %r94, %r6, %r93;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd2, %rd20;
+    ld.global.u16 %r95, [%rd21];
+MMA_NORMAL_RHS_CTA_STAGE_B_STORE:
+    mul.wide.u32 %rd22, %r90, 2;
+    mov.u64 %rd23, heirloom_matmul_normal_rhs_smem_b;
+    add.s64 %rd24, %rd23, %rd22;
+    st.shared.u16 [%rd24], %r95;
+    add.u32 %r90, %r90, 128;
+    bra MMA_NORMAL_RHS_CTA_STAGE_B_LOOP;
+MMA_NORMAL_RHS_CTA_STAGE_B_DONE:
+
+    bar.sync 0;
+
+    add.u32 %r19, %r74, %r13;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r19, %r89, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    mov.u64 %rd5, heirloom_matmul_normal_rhs_smem_a;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r89, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r89, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    mad.lo.u32 %r21, %r19, %r89, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r74, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r89, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    mad.lo.u32 %r21, %r19, %r89, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r89, %r20;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    mad.lo.u32 %r21, %r19, %r89, %r23;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r75, %r13;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    mov.u64 %rd8, heirloom_matmul_normal_rhs_smem_b;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    bar.sync 0;
+    add.u32 %r17, %r17, 16;
+    bra MMA_NORMAL_RHS_CTA_STAGED_K_LOOP;
+
+MMA_NORMAL_RHS_CTA_STAGED_STORE:
+    setp.ge.u32 %p2, %r15, %r4;
+    setp.ge.u32 %p3, %r16, %r6;
+    or.pred %p4, %p2, %p3;
+    @%p4 bra MMA_NORMAL_RHS_CTA_STAGED_DONE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f1;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f3;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f4;
+MMA_NORMAL_RHS_CTA_STAGED_DONE:
+    ret;
+}
+
+.visible .entry heirloom_matmul_bf16_mma_rhs_t_f32_cta_ldmatrix_a(
+    .param .u64 left,
+    .param .u64 right,
+    .param .u64 output,
+    .param .u32 m,
+    .param .u32 k,
+    .param .u32 n
+)
+{
+    .reg .pred %p<10>;
+    .reg .b32 %r<130>;
+    .reg .b64 %rd<100>;
+    .reg .f32 %f<9>;
+    .shared .align 16 .b8 heirloom_matmul_ldmatrix_smem_a[1024];
+    .shared .align 4 .b8 heirloom_matmul_ldmatrix_smem_b[512];
+
+    ld.param.u64 %rd1, [left];
+    ld.param.u64 %rd2, [right];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [m];
+    ld.param.u32 %r5, [k];
+    ld.param.u32 %r6, [n];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    shr.u32 %r70, %r10, 5;
+    and.b32 %r71, %r10, 31;
+    shr.u32 %r72, %r70, 1;
+    and.b32 %r73, %r70, 1;
+    shr.u32 %r13, %r71, 2;
+    and.b32 %r14, %r71, 3;
+    shl.b32 %r80, %r12, 5;
+    shl.b32 %r81, %r11, 4;
+    shl.b32 %r74, %r72, 4;
+    shl.b32 %r75, %r73, 3;
+    add.u32 %r15, %r80, %r74;
+    add.u32 %r16, %r81, %r75;
+    shl.b32 %r18, %r14, 1;
+    mov.u32 %r89, 16;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+MMA_RHS_T_CTA_LDMATRIX_A_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra MMA_RHS_T_CTA_LDMATRIX_A_STORE;
+
+    mov.u32 %r90, %r10;
+MMA_RHS_T_CTA_LDMATRIX_A_STAGE_A_LOOP:
+    setp.ge.u32 %p4, %r90, 512;
+    @%p4 bra MMA_RHS_T_CTA_LDMATRIX_A_STAGE_A_DONE;
+    div.u32 %r91, %r90, %r89;
+    rem.u32 %r92, %r90, %r89;
+    add.u32 %r93, %r80, %r91;
+    add.u32 %r94, %r17, %r92;
+    setp.ge.u32 %p5, %r93, %r4;
+    setp.ge.u32 %p6, %r94, %r5;
+    or.pred %p7, %p5, %p6;
+    mov.u32 %r95, 0;
+    @%p7 bra MMA_RHS_T_CTA_LDMATRIX_A_STAGE_A_STORE;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd1, %rd20;
+    ld.global.u16 %r95, [%rd21];
+MMA_RHS_T_CTA_LDMATRIX_A_STAGE_A_STORE:
+    mul.wide.u32 %rd22, %r90, 2;
+    mov.u64 %rd23, heirloom_matmul_ldmatrix_smem_a;
+    add.s64 %rd24, %rd23, %rd22;
+    st.shared.u16 [%rd24], %r95;
+    add.u32 %r90, %r90, 128;
+    bra MMA_RHS_T_CTA_LDMATRIX_A_STAGE_A_LOOP;
+MMA_RHS_T_CTA_LDMATRIX_A_STAGE_A_DONE:
+
+    mov.u32 %r90, %r10;
+MMA_RHS_T_CTA_LDMATRIX_A_STAGE_B_LOOP:
+    setp.ge.u32 %p4, %r90, 256;
+    @%p4 bra MMA_RHS_T_CTA_LDMATRIX_A_STAGE_B_DONE;
+    div.u32 %r91, %r90, %r89;
+    rem.u32 %r92, %r90, %r89;
+    add.u32 %r93, %r81, %r91;
+    add.u32 %r94, %r17, %r92;
+    setp.ge.u32 %p5, %r93, %r6;
+    setp.ge.u32 %p6, %r94, %r5;
+    or.pred %p7, %p5, %p6;
+    mov.u32 %r95, 0;
+    @%p7 bra MMA_RHS_T_CTA_LDMATRIX_A_STAGE_B_STORE;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd2, %rd20;
+    ld.global.u16 %r95, [%rd21];
+MMA_RHS_T_CTA_LDMATRIX_A_STAGE_B_STORE:
+    mul.wide.u32 %rd22, %r90, 2;
+    mov.u64 %rd23, heirloom_matmul_ldmatrix_smem_b;
+    add.s64 %rd24, %rd23, %rd22;
+    st.shared.u16 [%rd24], %r95;
+    add.u32 %r90, %r90, 128;
+    bra MMA_RHS_T_CTA_LDMATRIX_A_STAGE_B_LOOP;
+MMA_RHS_T_CTA_LDMATRIX_A_STAGE_B_DONE:
+
+    bar.sync 0;
+
+    and.b32 %r100, %r71, 7;
+    and.b32 %r101, %r71, 15;
+    shr.u32 %r102, %r71, 4;
+    setp.ge.u32 %p8, %r101, 8;
+    selp.u32 %r103, 8, 0, %p8;
+    add.u32 %r104, %r74, %r103;
+    add.u32 %r104, %r104, %r100;
+    shl.b32 %r105, %r102, 3;
+    mad.lo.u32 %r106, %r104, %r89, %r105;
+    mul.wide.u32 %rd30, %r106, 2;
+    mov.u64 %rd31, heirloom_matmul_ldmatrix_smem_a;
+    add.s64 %rd32, %rd31, %rd30;
+    cvt.u32.u64 %r107, %rd32;
+    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%r30, %r31, %r32, %r33}, [%r107];
+
+    add.u32 %r26, %r75, %r13;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    mov.u64 %rd8, heirloom_matmul_ldmatrix_smem_b;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    bar.sync 0;
+    add.u32 %r17, %r17, 16;
+    bra MMA_RHS_T_CTA_LDMATRIX_A_K_LOOP;
+
+MMA_RHS_T_CTA_LDMATRIX_A_STORE:
+    setp.ge.u32 %p2, %r15, %r4;
+    setp.ge.u32 %p3, %r16, %r6;
+    or.pred %p4, %p2, %p3;
+    @%p4 bra MMA_RHS_T_CTA_LDMATRIX_A_DONE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f1;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f3;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f4;
+MMA_RHS_T_CTA_LDMATRIX_A_DONE:
+    ret;
+}
+
+.visible .entry heirloom_matmul_bf16_mma_rhs_t_f32_cta_cp_async(
+    .param .u64 left,
+    .param .u64 right,
+    .param .u64 output,
+    .param .u32 m,
+    .param .u32 k,
+    .param .u32 n
+)
+{
+    .reg .pred %p<10>;
+    .reg .b32 %r<140>;
+    .reg .b64 %rd<110>;
+    .reg .f32 %f<9>;
+    .shared .align 16 .b8 heirloom_matmul_cp_async_smem_a[1024];
+    .shared .align 16 .b8 heirloom_matmul_cp_async_smem_b[512];
+
+    ld.param.u64 %rd1, [left];
+    ld.param.u64 %rd2, [right];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [m];
+    ld.param.u32 %r5, [k];
+    ld.param.u32 %r6, [n];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    shr.u32 %r70, %r10, 5;
+    and.b32 %r71, %r10, 31;
+    shr.u32 %r72, %r70, 1;
+    and.b32 %r73, %r70, 1;
+    shr.u32 %r13, %r71, 2;
+    and.b32 %r14, %r71, 3;
+    shl.b32 %r80, %r12, 5;
+    shl.b32 %r81, %r11, 4;
+    shl.b32 %r74, %r72, 4;
+    shl.b32 %r75, %r73, 3;
+    add.u32 %r15, %r80, %r74;
+    add.u32 %r16, %r81, %r75;
+    shl.b32 %r18, %r14, 1;
+    mov.u32 %r89, 16;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+MMA_RHS_T_CTA_CP_ASYNC_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra MMA_RHS_T_CTA_CP_ASYNC_STORE;
+
+    setp.ge.u32 %p4, %r10, 64;
+    @%p4 bra MMA_RHS_T_CTA_CP_ASYNC_A_DONE;
+    shr.u32 %r91, %r10, 1;
+    and.b32 %r92, %r10, 1;
+    shl.b32 %r92, %r92, 4;
+    add.u32 %r93, %r80, %r91;
+    mad.lo.u32 %r96, %r93, %r5, %r17;
+    mul.wide.u32 %rd20, %r96, 2;
+    cvt.u64.u32 %rd26, %r92;
+    add.s64 %rd21, %rd1, %rd20;
+    add.s64 %rd21, %rd21, %rd26;
+    mul.wide.u32 %rd22, %r91, 32;
+    add.s64 %rd22, %rd22, %rd26;
+    mov.u64 %rd23, heirloom_matmul_cp_async_smem_a;
+    add.s64 %rd24, %rd23, %rd22;
+    setp.ge.u32 %p5, %r93, %r4;
+    @%p5 bra MMA_RHS_T_CTA_CP_ASYNC_A_ZERO;
+    cvt.u32.u64 %r107, %rd24;
+    cp.async.ca.shared.global [%r107], [%rd21], 16;
+    bra MMA_RHS_T_CTA_CP_ASYNC_A_DONE;
+MMA_RHS_T_CTA_CP_ASYNC_A_ZERO:
+    mov.u64 %rd27, 0;
+    st.shared.u64 [%rd24], %rd27;
+    add.s64 %rd28, %rd24, 8;
+    st.shared.u64 [%rd28], %rd27;
+MMA_RHS_T_CTA_CP_ASYNC_A_DONE:
+
+    setp.ge.u32 %p4, %r10, 32;
+    @%p4 bra MMA_RHS_T_CTA_CP_ASYNC_B_DONE;
+    shr.u32 %r91, %r10, 1;
+    and.b32 %r92, %r10, 1;
+    shl.b32 %r92, %r92, 4;
+    add.u32 %r93, %r81, %r91;
+    mad.lo.u32 %r96, %r93, %r5, %r17;
+    mul.wide.u32 %rd20, %r96, 2;
+    cvt.u64.u32 %rd26, %r92;
+    add.s64 %rd21, %rd2, %rd20;
+    add.s64 %rd21, %rd21, %rd26;
+    mul.wide.u32 %rd22, %r91, 32;
+    add.s64 %rd22, %rd22, %rd26;
+    mov.u64 %rd23, heirloom_matmul_cp_async_smem_b;
+    add.s64 %rd24, %rd23, %rd22;
+    setp.ge.u32 %p5, %r93, %r6;
+    @%p5 bra MMA_RHS_T_CTA_CP_ASYNC_B_ZERO;
+    cvt.u32.u64 %r107, %rd24;
+    cp.async.ca.shared.global [%r107], [%rd21], 16;
+    bra MMA_RHS_T_CTA_CP_ASYNC_B_DONE;
+MMA_RHS_T_CTA_CP_ASYNC_B_ZERO:
+    mov.u64 %rd27, 0;
+    st.shared.u64 [%rd24], %rd27;
+    add.s64 %rd28, %rd24, 8;
+    st.shared.u64 [%rd28], %rd27;
+MMA_RHS_T_CTA_CP_ASYNC_B_DONE:
+
+    cp.async.commit_group;
+    cp.async.wait_group 0;
+    bar.sync 0;
+
+    and.b32 %r100, %r71, 7;
+    and.b32 %r101, %r71, 15;
+    shr.u32 %r102, %r71, 4;
+    setp.ge.u32 %p8, %r101, 8;
+    selp.u32 %r103, 8, 0, %p8;
+    add.u32 %r104, %r74, %r103;
+    add.u32 %r104, %r104, %r100;
+    shl.b32 %r105, %r102, 3;
+    mad.lo.u32 %r106, %r104, %r89, %r105;
+    mul.wide.u32 %rd30, %r106, 2;
+    mov.u64 %rd31, heirloom_matmul_cp_async_smem_a;
+    add.s64 %rd32, %rd31, %rd30;
+    cvt.u32.u64 %r107, %rd32;
+    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%r30, %r31, %r32, %r33}, [%r107];
+
+    add.u32 %r26, %r75, %r13;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    mov.u64 %rd8, heirloom_matmul_cp_async_smem_b;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    bar.sync 0;
+    add.u32 %r17, %r17, 16;
+    bra MMA_RHS_T_CTA_CP_ASYNC_K_LOOP;
+
+MMA_RHS_T_CTA_CP_ASYNC_STORE:
+    setp.ge.u32 %p2, %r15, %r4;
+    setp.ge.u32 %p3, %r16, %r6;
+    or.pred %p4, %p2, %p3;
+    @%p4 bra MMA_RHS_T_CTA_CP_ASYNC_DONE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f1;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f3;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f4;
+MMA_RHS_T_CTA_CP_ASYNC_DONE:
+    ret;
+}
+
+.visible .entry heirloom_matmul_bf16_mma_rhs_t_f32_cta_cp_async_db(
+    .param .u64 left,
+    .param .u64 right,
+    .param .u64 output,
+    .param .u32 m,
+    .param .u32 k,
+    .param .u32 n,
+    .param .u64 bias,
+    .param .u32 add_bias
+)
+{
+    .reg .pred %p<12>;
+    .reg .b32 %r<150>;
+    .reg .b64 %rd<120>;
+    .reg .f32 %f<9>;
+    .shared .align 16 .b8 heirloom_matmul_cp_async_db_smem_a[2048];
+    .shared .align 16 .b8 heirloom_matmul_cp_async_db_smem_b[1024];
+
+    ld.param.u64 %rd1, [left];
+    ld.param.u64 %rd2, [right];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [m];
+    ld.param.u32 %r5, [k];
+    ld.param.u32 %r6, [n];
+    ld.param.u64 %rd40, [bias];
+    ld.param.u32 %r7, [add_bias];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    shr.u32 %r70, %r10, 5;
+    and.b32 %r71, %r10, 31;
+    shr.u32 %r72, %r70, 1;
+    and.b32 %r73, %r70, 1;
+    shr.u32 %r13, %r71, 2;
+    and.b32 %r14, %r71, 3;
+    shl.b32 %r80, %r12, 5;
+    shl.b32 %r81, %r11, 4;
+    shl.b32 %r74, %r72, 4;
+    shl.b32 %r75, %r73, 3;
+    add.u32 %r15, %r80, %r74;
+    add.u32 %r16, %r81, %r75;
+    shl.b32 %r18, %r14, 1;
+    mov.u32 %r89, 16;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+    mov.u32 %r120, 0;
+
+    // Prefetch K tile 0 into stage 0.
+    setp.ge.u32 %p4, %r10, 64;
+    @%p4 bra MMA_RHS_T_CTA_CP_ASYNC_DB_PRE_A_DONE;
+    shr.u32 %r91, %r10, 1;
+    and.b32 %r92, %r10, 1;
+    shl.b32 %r92, %r92, 3;
+    add.u32 %r93, %r80, %r91;
+    add.u32 %r94, %r17, %r92;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd1, %rd20;
+    shl.b32 %r95, %r91, 4;
+    shl.b32 %r97, %r91, 5;
+    shl.b32 %r98, %r92, 1;
+    add.u32 %r97, %r97, %r98;
+    mov.u64 %rd23, heirloom_matmul_cp_async_db_smem_a;
+    cvt.u64.u32 %rd22, %r97;
+    add.s64 %rd24, %rd23, %rd22;
+    cvt.u32.u64 %r107, %rd24;
+    cp.async.ca.shared.global [%r107], [%rd21], 16;
+MMA_RHS_T_CTA_CP_ASYNC_DB_PRE_A_DONE:
+
+    setp.ge.u32 %p4, %r10, 32;
+    @%p4 bra MMA_RHS_T_CTA_CP_ASYNC_DB_PRE_B_DONE;
+    shr.u32 %r91, %r10, 1;
+    and.b32 %r92, %r10, 1;
+    shl.b32 %r92, %r92, 3;
+    add.u32 %r93, %r81, %r91;
+    add.u32 %r94, %r17, %r92;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd2, %rd20;
+    shl.b32 %r97, %r91, 5;
+    shl.b32 %r98, %r92, 1;
+    add.u32 %r97, %r97, %r98;
+    mov.u64 %rd23, heirloom_matmul_cp_async_db_smem_b;
+    cvt.u64.u32 %rd22, %r97;
+    add.s64 %rd24, %rd23, %rd22;
+    cvt.u32.u64 %r107, %rd24;
+    cp.async.ca.shared.global [%r107], [%rd21], 16;
+MMA_RHS_T_CTA_CP_ASYNC_DB_PRE_B_DONE:
+    cp.async.commit_group;
+    cp.async.wait_group 0;
+    bar.sync 0;
+
+MMA_RHS_T_CTA_CP_ASYNC_DB_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra MMA_RHS_T_CTA_CP_ASYNC_DB_STORE;
+
+    add.u32 %r121, %r17, 16;
+    xor.b32 %r122, %r120, 1;
+    setp.ge.u32 %p9, %r121, %r5;
+    @%p9 bra MMA_RHS_T_CTA_CP_ASYNC_DB_PREFETCH_DONE;
+    shl.b32 %r123, %r122, 10;
+    shl.b32 %r124, %r122, 9;
+
+    setp.ge.u32 %p4, %r10, 64;
+    @%p4 bra MMA_RHS_T_CTA_CP_ASYNC_DB_STAGE_A_DONE;
+    shr.u32 %r91, %r10, 1;
+    and.b32 %r92, %r10, 1;
+    shl.b32 %r92, %r92, 3;
+    add.u32 %r93, %r80, %r91;
+    add.u32 %r94, %r121, %r92;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd1, %rd20;
+    shl.b32 %r97, %r91, 5;
+    shl.b32 %r98, %r92, 1;
+    add.u32 %r97, %r97, %r98;
+    add.u32 %r97, %r97, %r123;
+    mov.u64 %rd23, heirloom_matmul_cp_async_db_smem_a;
+    cvt.u64.u32 %rd22, %r97;
+    add.s64 %rd24, %rd23, %rd22;
+    cvt.u32.u64 %r107, %rd24;
+    cp.async.ca.shared.global [%r107], [%rd21], 16;
+MMA_RHS_T_CTA_CP_ASYNC_DB_STAGE_A_DONE:
+
+    setp.ge.u32 %p4, %r10, 32;
+    @%p4 bra MMA_RHS_T_CTA_CP_ASYNC_DB_STAGE_B_DONE;
+    shr.u32 %r91, %r10, 1;
+    and.b32 %r92, %r10, 1;
+    shl.b32 %r92, %r92, 3;
+    add.u32 %r93, %r81, %r91;
+    add.u32 %r94, %r121, %r92;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd2, %rd20;
+    shl.b32 %r97, %r91, 5;
+    shl.b32 %r98, %r92, 1;
+    add.u32 %r97, %r97, %r98;
+    add.u32 %r97, %r97, %r124;
+    mov.u64 %rd23, heirloom_matmul_cp_async_db_smem_b;
+    cvt.u64.u32 %rd22, %r97;
+    add.s64 %rd24, %rd23, %rd22;
+    cvt.u32.u64 %r107, %rd24;
+    cp.async.ca.shared.global [%r107], [%rd21], 16;
+MMA_RHS_T_CTA_CP_ASYNC_DB_STAGE_B_DONE:
+    cp.async.commit_group;
+MMA_RHS_T_CTA_CP_ASYNC_DB_PREFETCH_DONE:
+
+    shl.b32 %r125, %r120, 10;
+    shl.b32 %r126, %r120, 9;
+    and.b32 %r100, %r71, 7;
+    and.b32 %r101, %r71, 15;
+    shr.u32 %r102, %r71, 4;
+    setp.ge.u32 %p8, %r101, 8;
+    selp.u32 %r103, 8, 0, %p8;
+    add.u32 %r104, %r74, %r103;
+    add.u32 %r104, %r104, %r100;
+    shl.b32 %r105, %r102, 3;
+    mad.lo.u32 %r106, %r104, %r89, %r105;
+    mul.wide.u32 %rd30, %r106, 2;
+    cvt.u64.u32 %rd34, %r125;
+    add.s64 %rd30, %rd30, %rd34;
+    mov.u64 %rd31, heirloom_matmul_cp_async_db_smem_a;
+    add.s64 %rd32, %rd31, %rd30;
+    cvt.u32.u64 %r107, %rd32;
+    ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%r30, %r31, %r32, %r33}, [%r107];
+
+    add.u32 %r26, %r75, %r13;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    cvt.u64.u32 %rd35, %r126;
+    add.s64 %rd7, %rd7, %rd35;
+    mov.u64 %rd8, heirloom_matmul_cp_async_db_smem_b;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd7, %rd7, %rd35;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r26, %r89, %r20;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd7, %rd7, %rd35;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    mad.lo.u32 %r21, %r26, %r89, %r23;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd7, %rd7, %rd35;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    @%p9 bra MMA_RHS_T_CTA_CP_ASYNC_DB_ADVANCE;
+    cp.async.wait_group 0;
+    bar.sync 0;
+MMA_RHS_T_CTA_CP_ASYNC_DB_ADVANCE:
+    mov.u32 %r17, %r121;
+    mov.u32 %r120, %r122;
+    bra MMA_RHS_T_CTA_CP_ASYNC_DB_K_LOOP;
+
+MMA_RHS_T_CTA_CP_ASYNC_DB_STORE:
+    setp.ge.u32 %p2, %r15, %r4;
+    setp.ge.u32 %p3, %r16, %r6;
+    or.pred %p4, %p2, %p3;
+    @%p4 bra MMA_RHS_T_CTA_CP_ASYNC_DB_DONE;
+    setp.eq.u32 %p10, %r7, 0;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    @%p10 bra MMA_RHS_T_CTA_CP_ASYNC_DB_STORE_0_NO_BIAS;
+    mul.wide.u32 %rd41, %r20, 4;
+    add.s64 %rd42, %rd40, %rd41;
+    ld.global.f32 %f5, [%rd42];
+    add.f32 %f1, %f1, %f5;
+MMA_RHS_T_CTA_CP_ASYNC_DB_STORE_0_NO_BIAS:
+    st.global.f32 [%rd11], %f1;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    @%p10 bra MMA_RHS_T_CTA_CP_ASYNC_DB_STORE_1_NO_BIAS;
+    mul.wide.u32 %rd41, %r20, 4;
+    add.s64 %rd42, %rd40, %rd41;
+    ld.global.f32 %f5, [%rd42];
+    add.f32 %f2, %f2, %f5;
+MMA_RHS_T_CTA_CP_ASYNC_DB_STORE_1_NO_BIAS:
+    st.global.f32 [%rd11], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    @%p10 bra MMA_RHS_T_CTA_CP_ASYNC_DB_STORE_2_NO_BIAS;
+    mul.wide.u32 %rd41, %r20, 4;
+    add.s64 %rd42, %rd40, %rd41;
+    ld.global.f32 %f5, [%rd42];
+    add.f32 %f3, %f3, %f5;
+MMA_RHS_T_CTA_CP_ASYNC_DB_STORE_2_NO_BIAS:
+    st.global.f32 [%rd11], %f3;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    @%p10 bra MMA_RHS_T_CTA_CP_ASYNC_DB_STORE_3_NO_BIAS;
+    mul.wide.u32 %rd41, %r20, 4;
+    add.s64 %rd42, %rd40, %rd41;
+    ld.global.f32 %f5, [%rd42];
+    add.f32 %f4, %f4, %f5;
+MMA_RHS_T_CTA_CP_ASYNC_DB_STORE_3_NO_BIAS:
+    st.global.f32 [%rd11], %f4;
+MMA_RHS_T_CTA_CP_ASYNC_DB_DONE:
+    ret;
+}
+
+.visible .entry heirloom_matmul_bf16_mma_rhs_t_f32_cta_wide_swizzled(
+    .param .u64 left,
+    .param .u64 right,
+    .param .u64 output,
+    .param .u32 m,
+    .param .u32 k,
+    .param .u32 n
+)
+{
+    .reg .pred %p<10>;
+    .reg .b32 %r<150>;
+    .reg .b64 %rd<100>;
+    .reg .f32 %f<9>;
+    .shared .align 4 .b8 heirloom_matmul_wide_smem_a[1024];
+    .shared .align 4 .b8 heirloom_matmul_wide_smem_b[1024];
+
+    ld.param.u64 %rd1, [left];
+    ld.param.u64 %rd2, [right];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [m];
+    ld.param.u32 %r5, [k];
+    ld.param.u32 %r6, [n];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    shr.u32 %r70, %r10, 5;
+    and.b32 %r71, %r10, 31;
+    shr.u32 %r72, %r70, 2;
+    and.b32 %r73, %r70, 3;
+    shr.u32 %r13, %r71, 2;
+    and.b32 %r14, %r71, 3;
+    shl.b32 %r80, %r12, 5;
+    shl.b32 %r81, %r11, 5;
+    shl.b32 %r74, %r72, 4;
+    shl.b32 %r75, %r73, 3;
+    add.u32 %r15, %r80, %r74;
+    add.u32 %r16, %r81, %r75;
+    shl.b32 %r18, %r14, 1;
+    mov.u32 %r89, 16;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+MMA_RHS_T_CTA_WIDE_SWIZZLED_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra MMA_RHS_T_CTA_WIDE_SWIZZLED_STORE;
+
+    mov.u32 %r90, %r10;
+MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_A_LOOP:
+    setp.ge.u32 %p4, %r90, 512;
+    @%p4 bra MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_A_DONE;
+    div.u32 %r91, %r90, %r89;
+    rem.u32 %r92, %r90, %r89;
+    add.u32 %r93, %r80, %r91;
+    add.u32 %r94, %r17, %r92;
+    setp.ge.u32 %p5, %r93, %r4;
+    setp.ge.u32 %p6, %r94, %r5;
+    or.pred %p7, %p5, %p6;
+    mov.u32 %r95, 0;
+    @%p7 bra MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_A_STORE;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd1, %rd20;
+    ld.global.u16 %r95, [%rd21];
+MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_A_STORE:
+    and.b32 %r97, %r91, 7;
+    xor.b32 %r98, %r92, %r97;
+    mad.lo.u32 %r99, %r91, %r89, %r98;
+    mul.wide.u32 %rd22, %r99, 2;
+    mov.u64 %rd23, heirloom_matmul_wide_smem_a;
+    add.s64 %rd24, %rd23, %rd22;
+    st.shared.u16 [%rd24], %r95;
+    add.u32 %r90, %r90, 256;
+    bra MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_A_LOOP;
+MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_A_DONE:
+
+    mov.u32 %r90, %r10;
+MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_B_LOOP:
+    setp.ge.u32 %p4, %r90, 512;
+    @%p4 bra MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_B_DONE;
+    div.u32 %r91, %r90, %r89;
+    rem.u32 %r92, %r90, %r89;
+    add.u32 %r93, %r81, %r91;
+    add.u32 %r94, %r17, %r92;
+    setp.ge.u32 %p5, %r93, %r6;
+    setp.ge.u32 %p6, %r94, %r5;
+    or.pred %p7, %p5, %p6;
+    mov.u32 %r95, 0;
+    @%p7 bra MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_B_STORE;
+    mad.lo.u32 %r96, %r93, %r5, %r94;
+    mul.wide.u32 %rd20, %r96, 2;
+    add.s64 %rd21, %rd2, %rd20;
+    ld.global.u16 %r95, [%rd21];
+MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_B_STORE:
+    and.b32 %r97, %r91, 7;
+    xor.b32 %r98, %r92, %r97;
+    mad.lo.u32 %r99, %r91, %r89, %r98;
+    mul.wide.u32 %rd22, %r99, 2;
+    mov.u64 %rd23, heirloom_matmul_wide_smem_b;
+    add.s64 %rd24, %rd23, %rd22;
+    st.shared.u16 [%rd24], %r95;
+    add.u32 %r90, %r90, 256;
+    bra MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_B_LOOP;
+MMA_RHS_T_CTA_WIDE_SWIZZLED_STAGE_B_DONE:
+
+    bar.sync 0;
+
+    add.u32 %r19, %r74, %r13;
+    add.u32 %r20, %r18, 0;
+    and.b32 %r97, %r19, 7;
+    xor.b32 %r98, %r20, %r97;
+    mad.lo.u32 %r21, %r19, %r89, %r98;
+    mul.wide.u32 %rd4, %r21, 2;
+    mov.u64 %rd5, heirloom_matmul_wide_smem_a;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    add.u32 %r23, %r20, 1;
+    xor.b32 %r98, %r23, %r97;
+    mad.lo.u32 %r21, %r19, %r89, %r98;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    and.b32 %r97, %r19, 7;
+    xor.b32 %r98, %r20, %r97;
+    mad.lo.u32 %r21, %r19, %r89, %r98;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    xor.b32 %r98, %r23, %r97;
+    mad.lo.u32 %r21, %r19, %r89, %r98;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r74, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    and.b32 %r97, %r19, 7;
+    xor.b32 %r98, %r20, %r97;
+    mad.lo.u32 %r21, %r19, %r89, %r98;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    xor.b32 %r98, %r23, %r97;
+    mad.lo.u32 %r21, %r19, %r89, %r98;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    and.b32 %r97, %r19, 7;
+    xor.b32 %r98, %r20, %r97;
+    mad.lo.u32 %r21, %r19, %r89, %r98;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r22, [%rd6];
+    xor.b32 %r98, %r23, %r97;
+    mad.lo.u32 %r21, %r19, %r89, %r98;
+    mul.wide.u32 %rd4, %r21, 2;
+    add.s64 %rd6, %rd5, %rd4;
+    ld.shared.u16 %r24, [%rd6];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r75, %r13;
+    add.u32 %r20, %r18, 0;
+    and.b32 %r97, %r26, 7;
+    xor.b32 %r98, %r20, %r97;
+    mad.lo.u32 %r21, %r26, %r89, %r98;
+    mul.wide.u32 %rd7, %r21, 2;
+    mov.u64 %rd8, heirloom_matmul_wide_smem_b;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    add.u32 %r23, %r20, 1;
+    xor.b32 %r98, %r23, %r97;
+    mad.lo.u32 %r21, %r26, %r89, %r98;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    xor.b32 %r98, %r20, %r97;
+    mad.lo.u32 %r21, %r26, %r89, %r98;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r22, [%rd9];
+    xor.b32 %r98, %r23, %r97;
+    mad.lo.u32 %r21, %r26, %r89, %r98;
+    mul.wide.u32 %rd7, %r21, 2;
+    add.s64 %rd9, %rd8, %rd7;
+    ld.shared.u16 %r24, [%rd9];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    bar.sync 0;
+    add.u32 %r17, %r17, 16;
+    bra MMA_RHS_T_CTA_WIDE_SWIZZLED_K_LOOP;
+
+MMA_RHS_T_CTA_WIDE_SWIZZLED_STORE:
+    setp.ge.u32 %p2, %r15, %r4;
+    setp.ge.u32 %p3, %r16, %r6;
+    or.pred %p4, %p2, %p3;
+    @%p4 bra MMA_RHS_T_CTA_WIDE_SWIZZLED_DONE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f1;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f3;
+
+    add.u32 %r20, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r6, %r20;
+    mul.wide.u32 %rd10, %r21, 4;
+    add.s64 %rd11, %rd3, %rd10;
+    st.global.f32 [%rd11], %f4;
+MMA_RHS_T_CTA_WIDE_SWIZZLED_DONE:
+    ret;
+}
+
+.visible .entry heirloom_attention_qk_bf16_mma_f32(
+    .param .u64 query,
+    .param .u64 key,
+    .param .u64 scores,
+    .param .u32 batch,
+    .param .u32 time,
+    .param .u32 channels,
+    .param .u32 n_heads,
+    .param .u32 head_dim
+)
+{
+    .reg .pred %p<8>;
+    .reg .b32 %r<100>;
+    .reg .b64 %rd<80>;
+    .reg .f32 %f<9>;
+
+    ld.param.u64 %rd1, [query];
+    ld.param.u64 %rd2, [key];
+    ld.param.u64 %rd3, [scores];
+    ld.param.u32 %r4, [batch];
+    ld.param.u32 %r5, [time];
+    ld.param.u32 %r6, [channels];
+    ld.param.u32 %r7, [n_heads];
+    ld.param.u32 %r8, [head_dim];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    mov.u32 %r27, %ctaid.z;
+    shr.u32 %r13, %r10, 2;
+    and.b32 %r14, %r10, 3;
+    shl.b32 %r15, %r12, 4;
+    shl.b32 %r16, %r11, 3;
+    shl.b32 %r18, %r14, 1;
+    rem.u32 %r28, %r27, %r7;
+    div.u32 %r29, %r27, %r7;
+    mul.lo.u32 %r40, %r28, %r8;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+ATTN_QK_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r8;
+    @%p1 bra ATTN_QK_STORE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd5];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd5];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd5];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd5];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r16, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r26;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd6, %r44, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r26, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd7];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd6, %r44, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd7];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd6, %r44, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r26, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd7];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd6, %r44, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd7];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    add.u32 %r17, %r17, 16;
+    bra ATTN_QK_K_LOOP;
+
+ATTN_QK_STORE:
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mul.lo.u32 %r45, %r27, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r5;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd8, %r46, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd9], %f1;
+
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd8, %r46, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    setp.lt.u32 %p3, %r20, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd9], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mul.lo.u32 %r45, %r27, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r5;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd8, %r46, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd9], %f3;
+
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd8, %r46, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    setp.lt.u32 %p3, %r20, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd9], %f4;
+    ret;
+}
+
+.visible .entry heirloom_attention_av_bf16_mma_f32(
+    .param .u64 attention,
+    .param .u64 value,
+    .param .u64 output,
+    .param .u32 batch,
+    .param .u32 time,
+    .param .u32 channels,
+    .param .u32 n_heads,
+    .param .u32 head_dim
+)
+{
+    .reg .pred %p<8>;
+    .reg .b32 %r<100>;
+    .reg .b64 %rd<80>;
+    .reg .f32 %f<9>;
+
+    ld.param.u64 %rd1, [attention];
+    ld.param.u64 %rd2, [value];
+    ld.param.u64 %rd3, [output];
+    ld.param.u32 %r4, [batch];
+    ld.param.u32 %r5, [time];
+    ld.param.u32 %r6, [channels];
+    ld.param.u32 %r7, [n_heads];
+    ld.param.u32 %r8, [head_dim];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    mov.u32 %r27, %ctaid.z;
+    shr.u32 %r13, %r10, 2;
+    and.b32 %r14, %r10, 3;
+    shl.b32 %r15, %r12, 4;
+    shl.b32 %r16, %r11, 3;
+    shl.b32 %r18, %r14, 1;
+    rem.u32 %r28, %r27, %r7;
+    div.u32 %r29, %r27, %r7;
+    mul.lo.u32 %r40, %r28, %r8;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.u32 %r17, 0;
+
+ATTN_AV_K_LOOP:
+    setp.ge.u32 %p1, %r17, %r5;
+    @%p1 bra ATTN_AV_STORE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r27, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r5;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd5];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r27, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r5;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd5];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r27, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r5;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd5];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r27, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r5;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd5];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd4, %r42, 2;
+    add.s64 %rd5, %rd1, %rd4;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd5];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r16, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd6, %r43, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r20, %r5;
+    setp.lt.u32 %p3, %r26, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd7];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd6, %r44, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    mov.u32 %r24, 0;
+    add.u32 %r44, %r20, 1;
+    setp.lt.u32 %p2, %r44, %r5;
+    setp.lt.u32 %p3, %r26, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd7];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd6, %r43, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p2, %r20, %r5;
+    setp.lt.u32 %p3, %r26, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r22, [%rd7];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd6, %r44, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    mov.u32 %r24, 0;
+    add.u32 %r44, %r20, 1;
+    setp.lt.u32 %p2, %r44, %r5;
+    setp.lt.u32 %p3, %r26, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 ld.global.u16 %r24, [%rd7];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f5, %f6, %f7, %f8},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f5;
+    mov.f32 %f2, %f6;
+    mov.f32 %f3, %f7;
+    mov.f32 %f4, %f8;
+
+    add.u32 %r17, %r17, 16;
+    bra ATTN_AV_K_LOOP;
+
+ATTN_AV_STORE:
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd8, %r46, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd9], %f1;
+
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd8, %r46, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd9], %f2;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd8, %r46, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd9], %f3;
+
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd8, %r46, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd9], %f4;
+    ret;
+}
+
+.visible .entry heirloom_flash_attention_bf16_tc_fwd_f32(
+    .param .u64 query,
+    .param .u64 key,
+    .param .u64 value,
+    .param .u64 output,
+    .param .u64 row_max_out,
+    .param .u64 row_denom_out,
+    .param .u32 batch,
+    .param .u32 time,
+    .param .u32 channels,
+    .param .u32 n_heads,
+    .param .u32 head_dim
+)
+{
+    .reg .pred %p<24>;
+    .reg .b32 %r<190>;
+    .reg .b64 %rd<130>;
+    .reg .f32 %f<100>;
+    .shared .align 16 .b8 heirloom_flash_tc_scores[1024];
+    .shared .align 16 .b8 heirloom_flash_tc_prob[512];
+    .shared .align 4 .b8 heirloom_flash_tc_row_max[64];
+    .shared .align 4 .b8 heirloom_flash_tc_row_denom[64];
+    .shared .align 4 .b8 heirloom_flash_tc_alpha[64];
+
+    ld.param.u64 %rd1, [query];
+    ld.param.u64 %rd2, [key];
+    ld.param.u64 %rd3, [value];
+    ld.param.u64 %rd4, [output];
+    ld.param.u64 %rd5, [row_max_out];
+    ld.param.u64 %rd6, [row_denom_out];
+    ld.param.u32 %r4, [batch];
+    ld.param.u32 %r5, [time];
+    ld.param.u32 %r6, [channels];
+    ld.param.u32 %r7, [n_heads];
+    ld.param.u32 %r8, [head_dim];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    mov.u32 %r27, %ctaid.z;
+    shr.u32 %r13, %r10, 2;
+    and.b32 %r14, %r10, 3;
+    shl.b32 %r15, %r12, 4;
+    shl.b32 %r16, %r11, 3;
+    shl.b32 %r18, %r14, 1;
+    rem.u32 %r28, %r27, %r7;
+    div.u32 %r29, %r27, %r7;
+    mul.lo.u32 %r40, %r28, %r8;
+
+    cvt.rn.f32.u32 %f70, %r8;
+    sqrt.rn.f32 %f71, %f70;
+    mov.f32 %f72, 0f3f800000;
+    div.rn.f32 %f73, %f72, %f71;
+    mov.f32 %f74, 0f3fb8aa3b;
+    mov.f32 %f75, 0fff800000;
+    mov.f32 %f76, 0f00000000;
+    mov.f32 %f77, 0f3f800000;
+
+    setp.ge.u32 %p1, %r10, 16;
+    @%p1 bra FLASH_TC_INIT_DONE;
+    mul.wide.u32 %rd20, %r10, 4;
+    mov.u64 %rd21, heirloom_flash_tc_row_max;
+    add.s64 %rd22, %rd21, %rd20;
+    st.shared.f32 [%rd22], %f75;
+    mov.u64 %rd23, heirloom_flash_tc_row_denom;
+    add.s64 %rd24, %rd23, %rd20;
+    st.shared.f32 [%rd24], %f76;
+    mov.u64 %rd25, heirloom_flash_tc_alpha;
+    add.s64 %rd26, %rd25, %rd20;
+    st.shared.f32 [%rd26], %f77;
+FLASH_TC_INIT_DONE:
+    bar.sync 0;
+
+    mov.f32 %f60, 0f00000000;
+    mov.f32 %f61, 0f00000000;
+    mov.f32 %f62, 0f00000000;
+    mov.f32 %f63, 0f00000000;
+    mov.u32 %r50, 0;
+
+FLASH_TC_KEY_BLOCK_LOOP:
+    setp.ge.u32 %p1, %r50, %r5;
+    @%p1 bra FLASH_TC_STORE_OUTPUT;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.f32 %f5, 0f00000000;
+    mov.f32 %f6, 0f00000000;
+    mov.f32 %f7, 0f00000000;
+    mov.f32 %f8, 0f00000000;
+    mov.u32 %r17, 0;
+
+FLASH_TC_QK_HEAD_DIM_LOOP:
+    setp.ge.u32 %p2, %r17, %r8;
+    @%p2 bra FLASH_TC_QK_DONE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r50, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r26;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f21, %f22, %f23, %f24},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f21;
+    mov.f32 %f2, %f22;
+    mov.f32 %f3, %f23;
+    mov.f32 %f4, %f24;
+
+    add.u32 %r26, %r50, %r13;
+    add.u32 %r26, %r26, 8;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r26;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r36, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r37, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f21, %f22, %f23, %f24},
+        {%r30, %r31, %r32, %r33},
+        {%r36, %r37},
+        {%f5, %f6, %f7, %f8};
+    mov.f32 %f5, %f21;
+    mov.f32 %f6, %f22;
+    mov.f32 %f7, %f23;
+    mov.f32 %f8, %f24;
+
+    add.u32 %r17, %r17, 16;
+    bra FLASH_TC_QK_HEAD_DIM_LOOP;
+
+FLASH_TC_QK_DONE:
+    mul.f32 %f1, %f1, %f73;
+    mul.f32 %f2, %f2, %f73;
+    mul.f32 %f3, %f3, %f73;
+    mul.f32 %f4, %f4, %f73;
+    mul.f32 %f5, %f5, %f73;
+    mul.f32 %f6, %f6, %f73;
+    mul.f32 %f7, %f7, %f73;
+    mul.f32 %f8, %f8, %f73;
+
+    add.u32 %r55, %r15, %r13;
+    add.u32 %r56, %r55, 8;
+    add.u32 %r57, %r50, %r18;
+    add.u32 %r58, %r57, 1;
+    mov.u32 %r59, 16;
+    mad.lo.u32 %r60, %r13, %r59, %r18;
+    mul.wide.u32 %rd40, %r60, 4;
+    mov.u64 %rd41, heirloom_flash_tc_scores;
+    add.s64 %rd42, %rd41, %rd40;
+
+    setp.lt.u32 %p2, %r55, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f1, %f75, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f2, %f75, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r60, %r13, 8;
+    mad.lo.u32 %r60, %r60, %r59, %r18;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r56, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f3, %f75, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f4, %f75, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r57, %r50, %r18;
+    add.u32 %r57, %r57, 8;
+    add.u32 %r58, %r57, 1;
+    mad.lo.u32 %r60, %r13, %r59, %r18;
+    add.u32 %r60, %r60, 8;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r55, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f5, %f75, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f6, %f75, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r60, %r13, 8;
+    mad.lo.u32 %r60, %r60, %r59, %r18;
+    add.u32 %r60, %r60, 8;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r56, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f7, %f75, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f8, %f75, %p5;
+    st.shared.f32 [%rd43], %f20;
+    bar.sync 0;
+
+    setp.ge.u32 %p1, %r10, 16;
+    @%p1 bra FLASH_TC_SOFTMAX_DONE;
+    add.u32 %r61, %r15, %r10;
+    setp.ge.u32 %p2, %r61, %r5;
+    @%p2 bra FLASH_TC_SOFTMAX_INVALID_ROW;
+    mul.wide.u32 %rd44, %r10, 4;
+    mov.u64 %rd45, heirloom_flash_tc_row_max;
+    add.s64 %rd46, %rd45, %rd44;
+    ld.shared.f32 %f30, [%rd46];
+    mov.u64 %rd47, heirloom_flash_tc_row_denom;
+    add.s64 %rd48, %rd47, %rd44;
+    ld.shared.f32 %f31, [%rd48];
+    mov.f32 %f32, 0fff800000;
+    mov.u32 %r62, 0;
+FLASH_TC_BLOCK_MAX_LOOP:
+    setp.ge.u32 %p3, %r62, 16;
+    @%p3 bra FLASH_TC_BLOCK_MAX_DONE;
+    mad.lo.u32 %r63, %r10, %r59, %r62;
+    mul.wide.u32 %rd49, %r63, 4;
+    mov.u64 %rd50, heirloom_flash_tc_scores;
+    add.s64 %rd51, %rd50, %rd49;
+    ld.shared.f32 %f33, [%rd51];
+    max.f32 %f32, %f32, %f33;
+    add.u32 %r62, %r62, 1;
+    bra FLASH_TC_BLOCK_MAX_LOOP;
+FLASH_TC_BLOCK_MAX_DONE:
+    max.f32 %f34, %f30, %f32;
+    sub.f32 %f35, %f30, %f34;
+    mul.f32 %f35, %f35, %f74;
+    ex2.approx.ftz.f32 %f36, %f35;
+    mov.f32 %f37, 0f00000000;
+    mov.u32 %r62, 0;
+FLASH_TC_PROB_LOOP:
+    setp.ge.u32 %p3, %r62, 16;
+    @%p3 bra FLASH_TC_PROB_DONE;
+    mad.lo.u32 %r63, %r10, %r59, %r62;
+    mul.wide.u32 %rd49, %r63, 4;
+    mov.u64 %rd50, heirloom_flash_tc_scores;
+    add.s64 %rd51, %rd50, %rd49;
+    ld.shared.f32 %f33, [%rd51];
+    sub.f32 %f38, %f33, %f34;
+    mul.f32 %f38, %f38, %f74;
+    ex2.approx.ftz.f32 %f39, %f38;
+    add.f32 %f37, %f37, %f39;
+    mul.wide.u32 %rd52, %r63, 2;
+    mov.u64 %rd53, heirloom_flash_tc_prob;
+    add.s64 %rd54, %rd53, %rd52;
+    mov.b32 %r64, %f39;
+    shr.u32 %r64, %r64, 16;
+    st.shared.u16 [%rd54], %r64;
+    add.u32 %r62, %r62, 1;
+    bra FLASH_TC_PROB_LOOP;
+FLASH_TC_PROB_DONE:
+    fma.rn.f32 %f40, %f31, %f36, %f37;
+    st.shared.f32 [%rd46], %f34;
+    st.shared.f32 [%rd48], %f40;
+    mov.u64 %rd55, heirloom_flash_tc_alpha;
+    add.s64 %rd56, %rd55, %rd44;
+    st.shared.f32 [%rd56], %f36;
+    bra FLASH_TC_SOFTMAX_DONE;
+
+FLASH_TC_SOFTMAX_INVALID_ROW:
+    mov.u32 %r62, 0;
+FLASH_TC_ZERO_PROB_LOOP:
+    setp.ge.u32 %p3, %r62, 16;
+    @%p3 bra FLASH_TC_ZERO_PROB_DONE;
+    mad.lo.u32 %r63, %r10, %r59, %r62;
+    mul.wide.u32 %rd52, %r63, 2;
+    mov.u64 %rd53, heirloom_flash_tc_prob;
+    add.s64 %rd54, %rd53, %rd52;
+    mov.u32 %r64, 0;
+    st.shared.u16 [%rd54], %r64;
+    add.u32 %r62, %r62, 1;
+    bra FLASH_TC_ZERO_PROB_LOOP;
+FLASH_TC_ZERO_PROB_DONE:
+    mul.wide.u32 %rd44, %r10, 4;
+    mov.u64 %rd55, heirloom_flash_tc_alpha;
+    add.s64 %rd56, %rd55, %rd44;
+    st.shared.f32 [%rd56], %f77;
+FLASH_TC_SOFTMAX_DONE:
+    bar.sync 0;
+
+    add.u32 %r19, %r13, 0;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    mov.u64 %rd61, heirloom_flash_tc_prob;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r13, 0;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r16, %r13;
+    add.u32 %r20, %r50, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd63, %r43, 2;
+    add.s64 %rd64, %rd3, %rd63;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r20, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd64];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd63, %r44, 2;
+    add.s64 %rd64, %rd3, %rd63;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd64];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd63, %r43, 2;
+    add.s64 %rd64, %rd3, %rd63;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r20, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd64];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd63, %r44, 2;
+    add.s64 %rd64, %rd3, %rd63;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd64];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mov.f32 %f41, 0f00000000;
+    mov.f32 %f42, 0f00000000;
+    mov.f32 %f43, 0f00000000;
+    mov.f32 %f44, 0f00000000;
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f45, %f46, %f47, %f48},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f41, %f42, %f43, %f44};
+
+    mul.wide.u32 %rd65, %r13, 4;
+    mov.u64 %rd66, heirloom_flash_tc_alpha;
+    add.s64 %rd67, %rd66, %rd65;
+    ld.shared.f32 %f49, [%rd67];
+    add.u32 %r65, %r13, 8;
+    mul.wide.u32 %rd65, %r65, 4;
+    add.s64 %rd67, %rd66, %rd65;
+    ld.shared.f32 %f50, [%rd67];
+
+    fma.rn.f32 %f60, %f60, %f49, %f45;
+    fma.rn.f32 %f61, %f61, %f49, %f46;
+    fma.rn.f32 %f62, %f62, %f50, %f47;
+    fma.rn.f32 %f63, %f63, %f50, %f48;
+
+    bar.sync 0;
+    add.u32 %r50, %r50, 16;
+    bra FLASH_TC_KEY_BLOCK_LOOP;
+
+FLASH_TC_STORE_OUTPUT:
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mul.wide.u32 %rd70, %r13, 4;
+    mov.u64 %rd71, heirloom_flash_tc_row_denom;
+    add.s64 %rd72, %rd71, %rd70;
+    ld.shared.f32 %f51, [%rd72];
+    div.rn.f32 %f60, %f60, %f51;
+    div.rn.f32 %f61, %f61, %f51;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd4, %rd73;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd74], %f60;
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd4, %rd73;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd74], %f61;
+
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    add.u32 %r65, %r13, 8;
+    mul.wide.u32 %rd70, %r65, 4;
+    add.s64 %rd72, %rd71, %rd70;
+    ld.shared.f32 %f52, [%rd72];
+    div.rn.f32 %f62, %f62, %f52;
+    div.rn.f32 %f63, %f63, %f52;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd4, %rd73;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd74], %f62;
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd4, %rd73;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 st.global.f32 [%rd74], %f63;
+
+    setp.ne.u32 %p1, %r11, 0;
+    @%p1 bra FLASH_TC_DONE;
+    setp.ge.u32 %p1, %r10, 16;
+    @%p1 bra FLASH_TC_DONE;
+    add.u32 %r19, %r15, %r10;
+    setp.ge.u32 %p1, %r19, %r5;
+    @%p1 bra FLASH_TC_DONE;
+    mul.lo.u32 %r66, %r27, %r5;
+    add.u32 %r66, %r66, %r19;
+    mul.wide.u32 %rd75, %r66, 4;
+    mov.u64 %rd76, heirloom_flash_tc_row_max;
+    mul.wide.u32 %rd77, %r10, 4;
+    add.s64 %rd78, %rd76, %rd77;
+    ld.shared.f32 %f53, [%rd78];
+    add.s64 %rd79, %rd5, %rd75;
+    st.global.f32 [%rd79], %f53;
+    mov.u64 %rd80, heirloom_flash_tc_row_denom;
+    add.s64 %rd81, %rd80, %rd77;
+    ld.shared.f32 %f54, [%rd81];
+    add.s64 %rd82, %rd6, %rd75;
+    st.global.f32 [%rd82], %f54;
+FLASH_TC_DONE:
+    ret;
+}
+
+.visible .entry heirloom_flash_attention_bf16_fwd_f32(
+    .param .u64 query,
+    .param .u64 key,
+    .param .u64 value,
+    .param .u64 output,
+    .param .u32 batch,
+    .param .u32 time,
+    .param .u32 channels,
+    .param .u32 n_heads,
+    .param .u32 head_dim,
+    .param .u32 total
+)
+{
+    .reg .pred %p<8>;
+    .reg .b32 %r<70>;
+    .reg .b64 %rd<44>;
+    .reg .f32 %f<40>;
+
+    ld.param.u64 %rd1, [query];
+    ld.param.u64 %rd2, [key];
+    ld.param.u64 %rd3, [value];
+    ld.param.u64 %rd4, [output];
+    ld.param.u32 %r4, [batch];
+    ld.param.u32 %r5, [time];
+    ld.param.u32 %r6, [channels];
+    ld.param.u32 %r7, [n_heads];
+    ld.param.u32 %r8, [head_dim];
+    ld.param.u32 %r9, [total];
+
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mad.lo.s32 %r10, %r2, %r3, %r1;
+    setp.ge.u32 %p1, %r10, %r9;
+    @%p1 bra DONE_FLASH_ATTN_BF16_FWD;
+
+    rem.u32 %r11, %r10, %r6;
+    div.u32 %r12, %r10, %r6;
+    rem.u32 %r13, %r12, %r5;
+    div.u32 %r14, %r12, %r5;
+    div.u32 %r15, %r11, %r8;
+    rem.u32 %r16, %r11, %r8;
+
+    cvt.rn.f32.u32 %f1, %r8;
+    sqrt.rn.f32 %f2, %f1;
+    mov.f32 %f3, 0f3f800000;
+    div.rn.f32 %f4, %f3, %f2;
+    mov.f32 %f5, 0fff800000;
+    mov.f32 %f6, 0f00000000;
+    mov.f32 %f7, 0f00000000;
+    mov.f32 %f20, 0f3fb8aa3b;
+    mov.u32 %r17, 0;
+
+FLASH_ATTN_TOKEN_LOOP:
+    setp.gt.u32 %p2, %r17, %r13;
+    @%p2 bra FLASH_ATTN_TOKEN_DONE;
+
+    mov.f32 %f8, 0f00000000;
+    mov.u32 %r18, 0;
+
+FLASH_ATTN_HEAD_DIM_LOOP:
+    setp.ge.u32 %p3, %r18, %r8;
+    @%p3 bra FLASH_ATTN_DOT_DONE;
+
+    mul.lo.u32 %r20, %r14, %r5;
+    add.u32 %r20, %r20, %r13;
+    mul.lo.u32 %r20, %r20, %r6;
+    mul.lo.u32 %r21, %r15, %r8;
+    add.u32 %r22, %r21, %r18;
+    add.u32 %r23, %r20, %r22;
+    mul.wide.u32 %rd10, %r23, 2;
+    add.s64 %rd11, %rd1, %rd10;
+    ld.global.u16 %r24, [%rd11];
+    shl.b32 %r25, %r24, 16;
+    mov.b32 %f9, %r25;
+
+    mul.lo.u32 %r26, %r14, %r5;
+    add.u32 %r26, %r26, %r17;
+    mul.lo.u32 %r26, %r26, %r6;
+    add.u32 %r27, %r26, %r22;
+    mul.wide.u32 %rd12, %r27, 2;
+    add.s64 %rd13, %rd2, %rd12;
+    ld.global.u16 %r28, [%rd13];
+    shl.b32 %r29, %r28, 16;
+    mov.b32 %f10, %r29;
+
+    fma.rn.f32 %f8, %f9, %f10, %f8;
+    add.u32 %r18, %r18, 1;
+    bra FLASH_ATTN_HEAD_DIM_LOOP;
+
+FLASH_ATTN_DOT_DONE:
+    mul.f32 %f11, %f8, %f4;
+    max.f32 %f12, %f5, %f11;
+    sub.f32 %f13, %f5, %f12;
+    mul.f32 %f14, %f13, %f20;
+    ex2.approx.ftz.f32 %f15, %f14;
+    sub.f32 %f16, %f11, %f12;
+    mul.f32 %f17, %f16, %f20;
+    ex2.approx.ftz.f32 %f18, %f17;
+
+    mul.lo.u32 %r30, %r14, %r5;
+    add.u32 %r30, %r30, %r17;
+    mul.lo.u32 %r30, %r30, %r6;
+    mul.lo.u32 %r31, %r15, %r8;
+    add.u32 %r31, %r31, %r16;
+    add.u32 %r32, %r30, %r31;
+    mul.wide.u32 %rd14, %r32, 2;
+    add.s64 %rd15, %rd3, %rd14;
+    ld.global.u16 %r33, [%rd15];
+    shl.b32 %r34, %r33, 16;
+    mov.b32 %f19, %r34;
+
+    mul.f32 %f21, %f7, %f15;
+    fma.rn.f32 %f7, %f18, %f19, %f21;
+    fma.rn.f32 %f6, %f6, %f15, %f18;
+    mov.f32 %f5, %f12;
+    add.u32 %r17, %r17, 1;
+    bra FLASH_ATTN_TOKEN_LOOP;
+
+FLASH_ATTN_TOKEN_DONE:
+    div.rn.f32 %f22, %f7, %f6;
+    mul.wide.u32 %rd16, %r10, 4;
+    add.s64 %rd17, %rd4, %rd16;
+    st.global.f32 [%rd17], %f22;
+
+DONE_FLASH_ATTN_BF16_FWD:
+    ret;
+}
+
+.visible .entry heirloom_flash_attention_bf16_bwd_row_dot_f32(
+    .param .u64 output,
+    .param .u64 grad_output,
+    .param .u64 row_dot,
+    .param .u32 batch,
+    .param .u32 time,
+    .param .u32 channels,
+    .param .u32 n_heads,
+    .param .u32 head_dim,
+    .param .u32 total
+)
+{
+    .reg .pred %p<3>;
+    .reg .b32 %r<32>;
+    .reg .b64 %rd<20>;
+    .reg .f32 %f<8>;
+
+    ld.param.u64 %rd1, [output];
+    ld.param.u64 %rd2, [grad_output];
+    ld.param.u64 %rd3, [row_dot];
+    ld.param.u32 %r4, [batch];
+    ld.param.u32 %r5, [time];
+    ld.param.u32 %r6, [channels];
+    ld.param.u32 %r7, [n_heads];
+    ld.param.u32 %r8, [head_dim];
+    ld.param.u32 %r9, [total];
+
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mad.lo.s32 %r10, %r2, %r3, %r1;
+    setp.ge.u32 %p1, %r10, %r9;
+    @%p1 bra DONE_FLASH_ATTN_BF16_ROW_DOT;
+
+    rem.u32 %r11, %r10, %r5;
+    div.u32 %r12, %r10, %r5;
+    rem.u32 %r13, %r12, %r7;
+    div.u32 %r14, %r12, %r7;
+    mul.lo.u32 %r15, %r13, %r8;
+    mov.f32 %f1, 0f00000000;
+    mov.u32 %r16, 0;
+
+FLASH_ATTN_BWD_ROW_DOT_LOOP:
+    setp.ge.u32 %p2, %r16, %r8;
+    @%p2 bra FLASH_ATTN_BWD_ROW_DOT_STORE;
+    mul.lo.u32 %r17, %r14, %r5;
+    add.u32 %r17, %r17, %r11;
+    mul.lo.u32 %r17, %r17, %r6;
+    add.u32 %r18, %r15, %r16;
+    add.u32 %r17, %r17, %r18;
+    mul.wide.u32 %rd4, %r17, 4;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.f32 %f2, [%rd5];
+    mul.wide.u32 %rd6, %r17, 2;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.u16 %r19, [%rd7];
+    shl.b32 %r20, %r19, 16;
+    mov.b32 %f3, %r20;
+    fma.rn.f32 %f1, %f2, %f3, %f1;
+    add.u32 %r16, %r16, 1;
+    bra FLASH_ATTN_BWD_ROW_DOT_LOOP;
+
+FLASH_ATTN_BWD_ROW_DOT_STORE:
+    mul.wide.u32 %rd8, %r10, 4;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f32 [%rd9], %f1;
+
+DONE_FLASH_ATTN_BF16_ROW_DOT:
+    ret;
+}
+
+.visible .entry heirloom_flash_attention_bf16_tc_bwd_tiled_mma_f32(
+    .param .u64 query,
+    .param .u64 key,
+    .param .u64 value,
+    .param .u64 output,
+    .param .u64 row_max,
+    .param .u64 row_denom,
+    .param .u64 grad_output,
+    .param .u64 row_dot,
+    .param .u64 grad_query,
+    .param .u64 grad_key,
+    .param .u64 grad_value,
+    .param .u32 batch,
+    .param .u32 time,
+    .param .u32 channels,
+    .param .u32 n_heads,
+    .param .u32 head_dim
+)
+{
+    .reg .pred %p<48>;
+    .reg .b32 %r<280>;
+    .reg .b64 %rd<200>;
+    .reg .f32 %f<190>;
+    .shared .align 16 .b8 heirloom_flash_bwd_scores[1024];
+    .shared .align 16 .b8 heirloom_flash_bwd_dp[1024];
+    .shared .align 16 .b8 heirloom_flash_bwd_p[512];
+    .shared .align 16 .b8 heirloom_flash_bwd_pt[512];
+    .shared .align 16 .b8 heirloom_flash_bwd_ds[512];
+    .shared .align 16 .b8 heirloom_flash_bwd_dst[512];
+
+    ld.param.u64 %rd1, [query];
+    ld.param.u64 %rd2, [key];
+    ld.param.u64 %rd3, [value];
+    ld.param.u64 %rd4, [output];
+    ld.param.u64 %rd5, [row_max];
+    ld.param.u64 %rd6, [row_denom];
+    ld.param.u64 %rd7, [grad_output];
+    ld.param.u64 %rd8, [row_dot];
+    ld.param.u64 %rd9, [grad_query];
+    ld.param.u64 %rd10, [grad_key];
+    ld.param.u64 %rd11, [grad_value];
+    ld.param.u32 %r4, [batch];
+    ld.param.u32 %r5, [time];
+    ld.param.u32 %r6, [channels];
+    ld.param.u32 %r7, [n_heads];
+    ld.param.u32 %r8, [head_dim];
+
+    mov.u32 %r10, %tid.x;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %ctaid.y;
+    mov.u32 %r27, %ctaid.z;
+    shr.u32 %r13, %r10, 2;
+    and.b32 %r14, %r10, 3;
+    shl.b32 %r18, %r14, 1;
+    div.u32 %r90, %r8, 8;
+    rem.u32 %r91, %r11, %r90;
+    div.u32 %r92, %r11, %r90;
+    shl.b32 %r15, %r12, 4;
+    shl.b32 %r50, %r92, 4;
+    shl.b32 %r16, %r91, 3;
+    rem.u32 %r28, %r27, %r7;
+    div.u32 %r29, %r27, %r7;
+    mul.lo.u32 %r40, %r28, %r8;
+    mov.u32 %r59, 16;
+
+    cvt.rn.f32.u32 %f70, %r8;
+    sqrt.rn.f32 %f71, %f70;
+    mov.f32 %f72, 0f3f800000;
+    div.rn.f32 %f73, %f72, %f71;
+    mov.f32 %f74, 0f3fb8aa3b;
+    mov.f32 %f75, 0fff800000;
+    mov.f32 %f76, 0f00000000;
+
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+    mov.f32 %f3, 0f00000000;
+    mov.f32 %f4, 0f00000000;
+    mov.f32 %f5, 0f00000000;
+    mov.f32 %f6, 0f00000000;
+    mov.f32 %f7, 0f00000000;
+    mov.f32 %f8, 0f00000000;
+    mov.u32 %r17, 0;
+
+FLASH_BWD_QK_HEAD_DIM_LOOP:
+    setp.ge.u32 %p1, %r17, %r8;
+    @%p1 bra FLASH_BWD_QK_DONE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r50, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r26;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f21, %f22, %f23, %f24},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f1, %f2, %f3, %f4};
+    mov.f32 %f1, %f21;
+    mov.f32 %f2, %f22;
+    mov.f32 %f3, %f23;
+    mov.f32 %f4, %f24;
+
+    add.u32 %r26, %r50, %r13;
+    add.u32 %r26, %r26, 8;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r26;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r36, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r37, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f21, %f22, %f23, %f24},
+        {%r30, %r31, %r32, %r33},
+        {%r36, %r37},
+        {%f5, %f6, %f7, %f8};
+    mov.f32 %f5, %f21;
+    mov.f32 %f6, %f22;
+    mov.f32 %f7, %f23;
+    mov.f32 %f8, %f24;
+
+    add.u32 %r17, %r17, 16;
+    bra FLASH_BWD_QK_HEAD_DIM_LOOP;
+
+FLASH_BWD_QK_DONE:
+    mul.f32 %f1, %f1, %f73;
+    mul.f32 %f2, %f2, %f73;
+    mul.f32 %f3, %f3, %f73;
+    mul.f32 %f4, %f4, %f73;
+    mul.f32 %f5, %f5, %f73;
+    mul.f32 %f6, %f6, %f73;
+    mul.f32 %f7, %f7, %f73;
+    mul.f32 %f8, %f8, %f73;
+
+    add.u32 %r55, %r15, %r13;
+    add.u32 %r56, %r55, 8;
+    add.u32 %r57, %r50, %r18;
+    add.u32 %r58, %r57, 1;
+    mad.lo.u32 %r60, %r13, %r59, %r18;
+    mul.wide.u32 %rd40, %r60, 4;
+    mov.u64 %rd41, heirloom_flash_bwd_scores;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r55, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f1, %f75, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f2, %f75, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r60, %r13, 8;
+    mad.lo.u32 %r60, %r60, %r59, %r18;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r56, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f3, %f75, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f4, %f75, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r57, %r50, %r18;
+    add.u32 %r57, %r57, 8;
+    add.u32 %r58, %r57, 1;
+    mad.lo.u32 %r60, %r13, %r59, %r18;
+    add.u32 %r60, %r60, 8;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r55, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f5, %f75, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f6, %f75, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r60, %r13, 8;
+    mad.lo.u32 %r60, %r60, %r59, %r18;
+    add.u32 %r60, %r60, 8;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r56, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f7, %f75, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f8, %f75, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    mov.f32 %f9, 0f00000000;
+    mov.f32 %f10, 0f00000000;
+    mov.f32 %f11, 0f00000000;
+    mov.f32 %f12, 0f00000000;
+    mov.f32 %f13, 0f00000000;
+    mov.f32 %f14, 0f00000000;
+    mov.f32 %f15, 0f00000000;
+    mov.f32 %f16, 0f00000000;
+    mov.u32 %r17, 0;
+
+FLASH_BWD_DP_HEAD_DIM_LOOP:
+    setp.ge.u32 %p1, %r17, %r8;
+    @%p1 bra FLASH_BWD_DP_DONE;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd7, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd7, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd7, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd7, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd7, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd7, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+
+    add.u32 %r19, %r19, 8;
+    mul.lo.u32 %r41, %r29, %r5;
+    add.u32 %r41, %r41, %r19;
+    mul.lo.u32 %r41, %r41, %r6;
+    add.u32 %r41, %r41, %r40;
+    add.u32 %r42, %r41, %r20;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd7, %rd30;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r19, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd31];
+    add.u32 %r42, %r41, %r23;
+    mul.wide.u32 %rd30, %r42, 2;
+    add.s64 %rd31, %rd7, %rd30;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd31];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r50, %r13;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r26;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd3, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd3, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd3, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd3, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f21, %f22, %f23, %f24},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f9, %f10, %f11, %f12};
+    mov.f32 %f9, %f21;
+    mov.f32 %f10, %f22;
+    mov.f32 %f11, %f23;
+    mov.f32 %f12, %f24;
+
+    add.u32 %r26, %r50, %r13;
+    add.u32 %r26, %r26, 8;
+    add.u32 %r20, %r17, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r26;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd3, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd3, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r36, %r22, %r25;
+
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    add.u32 %r44, %r43, %r20;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd3, %rd32;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r26, %r5;
+    setp.lt.u32 %p4, %r20, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd33];
+    add.u32 %r44, %r43, %r23;
+    mul.wide.u32 %rd32, %r44, 2;
+    add.s64 %rd33, %rd3, %rd32;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p4, %r23, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd33];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r37, %r22, %r25;
+
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f21, %f22, %f23, %f24},
+        {%r30, %r31, %r32, %r33},
+        {%r36, %r37},
+        {%f13, %f14, %f15, %f16};
+    mov.f32 %f13, %f21;
+    mov.f32 %f14, %f22;
+    mov.f32 %f15, %f23;
+    mov.f32 %f16, %f24;
+
+    add.u32 %r17, %r17, 16;
+    bra FLASH_BWD_DP_HEAD_DIM_LOOP;
+
+FLASH_BWD_DP_DONE:
+    mov.u64 %rd41, heirloom_flash_bwd_dp;
+    add.u32 %r55, %r15, %r13;
+    add.u32 %r56, %r55, 8;
+    add.u32 %r57, %r50, %r18;
+    add.u32 %r58, %r57, 1;
+    mad.lo.u32 %r60, %r13, %r59, %r18;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r55, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f9, %f76, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f10, %f76, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r60, %r13, 8;
+    mad.lo.u32 %r60, %r60, %r59, %r18;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r56, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f11, %f76, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f12, %f76, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r57, %r50, %r18;
+    add.u32 %r57, %r57, 8;
+    add.u32 %r58, %r57, 1;
+    mad.lo.u32 %r60, %r13, %r59, %r18;
+    add.u32 %r60, %r60, 8;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r55, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f13, %f76, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r55;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f14, %f76, %p5;
+    st.shared.f32 [%rd43], %f20;
+
+    add.u32 %r60, %r13, 8;
+    mad.lo.u32 %r60, %r60, %r59, %r18;
+    add.u32 %r60, %r60, 8;
+    mul.wide.u32 %rd40, %r60, 4;
+    add.s64 %rd42, %rd41, %rd40;
+    setp.lt.u32 %p2, %r56, %r5;
+    setp.lt.u32 %p3, %r57, %r5;
+    setp.le.u32 %p4, %r57, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f15, %f76, %p5;
+    st.shared.f32 [%rd42], %f20;
+    add.s64 %rd43, %rd42, 4;
+    setp.lt.u32 %p3, %r58, %r5;
+    setp.le.u32 %p4, %r58, %r56;
+    and.pred %p5, %p2, %p3;
+    and.pred %p5, %p5, %p4;
+    selp.f32 %f20, %f16, %f76, %p5;
+    st.shared.f32 [%rd43], %f20;
+    bar.sync 0;
+
+    setp.ge.u32 %p1, %r10, 16;
+    @%p1 bra FLASH_BWD_SOFTMAX_TILE_DONE;
+    add.u32 %r61, %r15, %r10;
+    setp.ge.u32 %p2, %r61, %r5;
+    mul.lo.u32 %r62, %r27, %r5;
+    add.u32 %r62, %r62, %r61;
+    mul.wide.u32 %rd44, %r62, 4;
+    add.s64 %rd45, %rd5, %rd44;
+    ld.global.f32 %f30, [%rd45];
+    add.s64 %rd46, %rd6, %rd44;
+    ld.global.f32 %f31, [%rd46];
+    add.s64 %rd47, %rd8, %rd44;
+    ld.global.f32 %f32, [%rd47];
+    mov.u32 %r63, 0;
+FLASH_BWD_SOFTMAX_COL_LOOP:
+    setp.ge.u32 %p3, %r63, 16;
+    @%p3 bra FLASH_BWD_SOFTMAX_TILE_DONE;
+    add.u32 %r64, %r50, %r63;
+    mad.lo.u32 %r65, %r10, %r59, %r63;
+    mul.wide.u32 %rd48, %r65, 4;
+    mov.u64 %rd49, heirloom_flash_bwd_scores;
+    add.s64 %rd50, %rd49, %rd48;
+    ld.shared.f32 %f33, [%rd50];
+    mov.u64 %rd51, heirloom_flash_bwd_dp;
+    add.s64 %rd52, %rd51, %rd48;
+    ld.shared.f32 %f34, [%rd52];
+    setp.lt.u32 %p4, %r64, %r5;
+    setp.le.u32 %p5, %r64, %r61;
+    and.pred %p6, %p4, %p5;
+    not.pred %p7, %p2;
+    and.pred %p6, %p6, %p7;
+    sub.f32 %f35, %f33, %f30;
+    mul.f32 %f35, %f35, %f74;
+    ex2.approx.ftz.f32 %f36, %f35;
+    div.rn.f32 %f36, %f36, %f31;
+    sub.f32 %f37, %f34, %f32;
+    mul.f32 %f38, %f36, %f37;
+    mul.f32 %f38, %f38, %f73;
+    selp.f32 %f36, %f36, %f76, %p6;
+    selp.f32 %f38, %f38, %f76, %p6;
+
+    mul.wide.u32 %rd53, %r65, 2;
+    mov.u64 %rd54, heirloom_flash_bwd_p;
+    add.s64 %rd55, %rd54, %rd53;
+    mov.b32 %r66, %f36;
+    shr.u32 %r66, %r66, 16;
+    st.shared.u16 [%rd55], %r66;
+    mov.u64 %rd56, heirloom_flash_bwd_ds;
+    add.s64 %rd57, %rd56, %rd53;
+    mov.b32 %r67, %f38;
+    shr.u32 %r67, %r67, 16;
+    st.shared.u16 [%rd57], %r67;
+
+    mad.lo.u32 %r68, %r63, %r59, %r10;
+    mul.wide.u32 %rd58, %r68, 2;
+    mov.u64 %rd59, heirloom_flash_bwd_pt;
+    add.s64 %rd60, %rd59, %rd58;
+    st.shared.u16 [%rd60], %r66;
+    mov.u64 %rd61, heirloom_flash_bwd_dst;
+    add.s64 %rd62, %rd61, %rd58;
+    st.shared.u16 [%rd62], %r67;
+
+    add.u32 %r63, %r63, 1;
+    bra FLASH_BWD_SOFTMAX_COL_LOOP;
+
+FLASH_BWD_SOFTMAX_TILE_DONE:
+    bar.sync 0;
+
+    // dQ = dS * K
+    mov.u64 %rd61, heirloom_flash_bwd_ds;
+    add.u32 %r19, %r13, 0;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+    add.u32 %r19, %r13, 0;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r16, %r13;
+    add.u32 %r20, %r50, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd63, %r43, 2;
+    add.s64 %rd64, %rd2, %rd63;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r20, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd64];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd63, %r44, 2;
+    add.s64 %rd64, %rd2, %rd63;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd64];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd63, %r43, 2;
+    add.s64 %rd64, %rd2, %rd63;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r20, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd64];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd63, %r44, 2;
+    add.s64 %rd64, %rd2, %rd63;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd64];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+    mov.f32 %f41, 0f00000000;
+    mov.f32 %f42, 0f00000000;
+    mov.f32 %f43, 0f00000000;
+    mov.f32 %f44, 0f00000000;
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f45, %f46, %f47, %f48},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f41, %f42, %f43, %f44};
+
+    add.u32 %r19, %r15, %r13;
+    add.u32 %r20, %r16, %r18;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd9, %rd73;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f45;
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd9, %rd73;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f46;
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd9, %rd73;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f47;
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd9, %rd73;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f48;
+
+    // dV = P^T * dO
+    mov.u64 %rd61, heirloom_flash_bwd_pt;
+    add.u32 %r19, %r13, 0;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+    add.u32 %r19, %r13, 0;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r16, %r13;
+    add.u32 %r20, %r15, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd63, %r43, 2;
+    add.s64 %rd64, %rd7, %rd63;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r20, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd64];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd63, %r44, 2;
+    add.s64 %rd64, %rd7, %rd63;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd64];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd63, %r43, 2;
+    add.s64 %rd64, %rd7, %rd63;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r20, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd64];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd63, %r44, 2;
+    add.s64 %rd64, %rd7, %rd63;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd64];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+    mov.f32 %f41, 0f00000000;
+    mov.f32 %f42, 0f00000000;
+    mov.f32 %f43, 0f00000000;
+    mov.f32 %f44, 0f00000000;
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f45, %f46, %f47, %f48},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f41, %f42, %f43, %f44};
+
+    add.u32 %r19, %r50, %r13;
+    add.u32 %r20, %r16, %r18;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd11, %rd73;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f45;
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd11, %rd73;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f46;
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd11, %rd73;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f47;
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd11, %rd73;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f48;
+
+    // dK = dS^T * Q
+    mov.u64 %rd61, heirloom_flash_bwd_dst;
+    add.u32 %r19, %r13, 0;
+    add.u32 %r20, %r18, 0;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r30, %r22, %r25;
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r31, %r22, %r25;
+    add.u32 %r19, %r13, 0;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r32, %r22, %r25;
+    add.u32 %r19, %r19, 8;
+    mad.lo.u32 %r21, %r19, %r59, %r20;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r22, [%rd62];
+    mad.lo.u32 %r21, %r19, %r59, %r23;
+    mul.wide.u32 %rd60, %r21, 2;
+    add.s64 %rd62, %rd61, %rd60;
+    ld.shared.u16 %r24, [%rd62];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r33, %r22, %r25;
+
+    add.u32 %r26, %r16, %r13;
+    add.u32 %r20, %r15, %r18;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd63, %r43, 2;
+    add.s64 %rd64, %rd1, %rd63;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r20, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd64];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd63, %r44, 2;
+    add.s64 %rd64, %rd1, %rd63;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd64];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r34, %r22, %r25;
+    add.u32 %r20, %r20, 8;
+    add.u32 %r23, %r20, 1;
+    mul.lo.u32 %r43, %r29, %r5;
+    add.u32 %r43, %r43, %r20;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r43, %r43, %r40;
+    add.u32 %r43, %r43, %r26;
+    mul.wide.u32 %rd63, %r43, 2;
+    add.s64 %rd64, %rd1, %rd63;
+    mov.u32 %r22, 0;
+    setp.lt.u32 %p3, %r20, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r22, [%rd64];
+    add.u32 %r44, %r43, %r6;
+    mul.wide.u32 %rd63, %r44, 2;
+    add.s64 %rd64, %rd1, %rd63;
+    mov.u32 %r24, 0;
+    setp.lt.u32 %p3, %r23, %r5;
+    setp.lt.u32 %p4, %r26, %r8;
+    and.pred %p5, %p3, %p4;
+    @%p5 ld.global.u16 %r24, [%rd64];
+    shl.b32 %r25, %r24, 16;
+    or.b32 %r35, %r22, %r25;
+    mov.f32 %f41, 0f00000000;
+    mov.f32 %f42, 0f00000000;
+    mov.f32 %f43, 0f00000000;
+    mov.f32 %f44, 0f00000000;
+    mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32
+        {%f45, %f46, %f47, %f48},
+        {%r30, %r31, %r32, %r33},
+        {%r34, %r35},
+        {%f41, %f42, %f43, %f44};
+
+    add.u32 %r19, %r50, %r13;
+    add.u32 %r20, %r16, %r18;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd10, %rd73;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f45;
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd10, %rd73;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f46;
+    add.u32 %r19, %r19, 8;
+    sub.u32 %r20, %r20, 1;
+    mul.lo.u32 %r45, %r29, %r5;
+    add.u32 %r45, %r45, %r19;
+    mul.lo.u32 %r45, %r45, %r6;
+    add.u32 %r45, %r45, %r40;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd10, %rd73;
+    setp.lt.u32 %p2, %r19, %r5;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f47;
+    add.u32 %r20, %r20, 1;
+    add.u32 %r46, %r45, %r20;
+    mul.wide.u32 %rd73, %r46, 4;
+    add.s64 %rd74, %rd10, %rd73;
+    setp.lt.u32 %p3, %r20, %r8;
+    and.pred %p4, %p2, %p3;
+    @%p4 atom.global.add.f32 %f80, [%rd74], %f48;
+
+DONE_FLASH_ATTN_BF16_BWD_TILED_MMA:
+    ret;
+}
+
+.visible .entry heirloom_flash_attention_bf16_tc_bwd_scalar_recompute_f32(
+    .param .u64 query,
+    .param .u64 key,
+    .param .u64 value,
+    .param .u64 output,
+    .param .u64 row_max,
+    .param .u64 row_denom,
+    .param .u64 grad_output,
+    .param .u64 row_dot,
+    .param .u64 grad_query,
+    .param .u64 grad_key,
+    .param .u64 grad_value,
+    .param .u32 batch,
+    .param .u32 time,
+    .param .u32 channels,
+    .param .u32 n_heads,
+    .param .u32 head_dim,
+    .param .u32 total
+)
+{
+    .reg .pred %p<8>;
+    .reg .b32 %r<120>;
+    .reg .b64 %rd<80>;
+    .reg .f32 %f<64>;
+
+    ld.param.u64 %rd1, [query];
+    ld.param.u64 %rd2, [key];
+    ld.param.u64 %rd3, [value];
+    ld.param.u64 %rd4, [output];
+    ld.param.u64 %rd5, [row_max];
+    ld.param.u64 %rd6, [row_denom];
+    ld.param.u64 %rd7, [grad_output];
+    ld.param.u64 %rd8, [row_dot];
+    ld.param.u64 %rd9, [grad_query];
+    ld.param.u64 %rd10, [grad_key];
+    ld.param.u64 %rd11, [grad_value];
+    ld.param.u32 %r4, [batch];
+    ld.param.u32 %r5, [time];
+    ld.param.u32 %r6, [channels];
+    ld.param.u32 %r7, [n_heads];
+    ld.param.u32 %r8, [head_dim];
+    ld.param.u32 %r9, [total];
+
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mad.lo.s32 %r10, %r2, %r3, %r1;
+    setp.ge.u32 %p1, %r10, %r9;
+    @%p1 bra DONE_FLASH_ATTN_BF16_BWD_SCALAR;
+
+    rem.u32 %r11, %r10, %r6;
+    div.u32 %r12, %r10, %r6;
+    rem.u32 %r13, %r12, %r5;
+    div.u32 %r14, %r12, %r5;
+    div.u32 %r15, %r11, %r8;
+    rem.u32 %r16, %r11, %r8;
+    mul.lo.u32 %r17, %r15, %r8;
+    mad.lo.u32 %r18, %r14, %r7, %r15;
+
+    cvt.rn.f32.u32 %f1, %r8;
+    sqrt.rn.f32 %f2, %f1;
+    mov.f32 %f3, 0f3f800000;
+    div.rn.f32 %f4, %f3, %f2;
+    mov.f32 %f5, 0f3fb8aa3b;
+
+    mad.lo.u32 %r19, %r18, %r5, %r13;
+    mul.wide.u32 %rd12, %r19, 4;
+    add.s64 %rd13, %rd5, %rd12;
+    ld.global.f32 %f6, [%rd13];
+    add.s64 %rd14, %rd6, %rd12;
+    ld.global.f32 %f7, [%rd14];
+    add.s64 %rd15, %rd8, %rd12;
+    ld.global.f32 %f8, [%rd15];
+
+    mov.f32 %f30, 0f00000000;
+    mov.u32 %r20, 0;
+
+FLASH_ATTN_BWD_GQ_TOKEN_LOOP:
+    setp.gt.u32 %p2, %r20, %r13;
+    @%p2 bra FLASH_ATTN_BWD_GQ_DONE;
+    mov.f32 %f9, 0f00000000;
+    mov.f32 %f10, 0f00000000;
+    mov.u32 %r21, 0;
+
+FLASH_ATTN_BWD_GQ_DOT_LOOP:
+    setp.ge.u32 %p3, %r21, %r8;
+    @%p3 bra FLASH_ATTN_BWD_GQ_DOT_DONE;
+    mul.lo.u32 %r22, %r14, %r5;
+    add.u32 %r22, %r22, %r13;
+    mul.lo.u32 %r22, %r22, %r6;
+    add.u32 %r23, %r17, %r21;
+    add.u32 %r24, %r22, %r23;
+    mul.wide.u32 %rd16, %r24, 2;
+    add.s64 %rd17, %rd1, %rd16;
+    ld.global.u16 %r25, [%rd17];
+    shl.b32 %r26, %r25, 16;
+    mov.b32 %f11, %r26;
+    mul.lo.u32 %r27, %r14, %r5;
+    add.u32 %r27, %r27, %r20;
+    mul.lo.u32 %r27, %r27, %r6;
+    add.u32 %r28, %r27, %r23;
+    mul.wide.u32 %rd18, %r28, 2;
+    add.s64 %rd19, %rd2, %rd18;
+    ld.global.u16 %r29, [%rd19];
+    shl.b32 %r30, %r29, 16;
+    mov.b32 %f12, %r30;
+    fma.rn.f32 %f9, %f11, %f12, %f9;
+    mul.wide.u32 %rd20, %r24, 2;
+    add.s64 %rd21, %rd7, %rd20;
+    ld.global.u16 %r31, [%rd21];
+    shl.b32 %r32, %r31, 16;
+    mov.b32 %f13, %r32;
+    mul.wide.u32 %rd22, %r28, 2;
+    add.s64 %rd23, %rd3, %rd22;
+    ld.global.u16 %r33, [%rd23];
+    shl.b32 %r34, %r33, 16;
+    mov.b32 %f14, %r34;
+    fma.rn.f32 %f10, %f13, %f14, %f10;
+    add.u32 %r21, %r21, 1;
+    bra FLASH_ATTN_BWD_GQ_DOT_LOOP;
+
+FLASH_ATTN_BWD_GQ_DOT_DONE:
+    mul.f32 %f15, %f9, %f4;
+    sub.f32 %f15, %f15, %f6;
+    mul.f32 %f15, %f15, %f5;
+    ex2.approx.ftz.f32 %f16, %f15;
+    div.rn.f32 %f16, %f16, %f7;
+    sub.f32 %f17, %f10, %f8;
+    mul.f32 %f17, %f17, %f16;
+    mul.f32 %f17, %f17, %f4;
+    mul.lo.u32 %r35, %r14, %r5;
+    add.u32 %r35, %r35, %r20;
+    mul.lo.u32 %r35, %r35, %r6;
+    add.u32 %r36, %r17, %r16;
+    add.u32 %r35, %r35, %r36;
+    mul.wide.u32 %rd24, %r35, 2;
+    add.s64 %rd25, %rd2, %rd24;
+    ld.global.u16 %r37, [%rd25];
+    shl.b32 %r38, %r37, 16;
+    mov.b32 %f18, %r38;
+    fma.rn.f32 %f30, %f17, %f18, %f30;
+    add.u32 %r20, %r20, 1;
+    bra FLASH_ATTN_BWD_GQ_TOKEN_LOOP;
+
+FLASH_ATTN_BWD_GQ_DONE:
+    mov.f32 %f31, 0f00000000;
+    mov.f32 %f32, 0f00000000;
+    mov.u32 %r40, %r13;
+
+FLASH_ATTN_BWD_GKGV_TOKEN_LOOP:
+    setp.ge.u32 %p2, %r40, %r5;
+    @%p2 bra FLASH_ATTN_BWD_GKGV_DONE;
+    mad.lo.u32 %r41, %r18, %r5, %r40;
+    mul.wide.u32 %rd26, %r41, 4;
+    add.s64 %rd27, %rd5, %rd26;
+    ld.global.f32 %f19, [%rd27];
+    add.s64 %rd28, %rd6, %rd26;
+    ld.global.f32 %f20, [%rd28];
+    add.s64 %rd29, %rd8, %rd26;
+    ld.global.f32 %f21, [%rd29];
+    mov.f32 %f22, 0f00000000;
+    mov.f32 %f23, 0f00000000;
+    mov.u32 %r42, 0;
+
+FLASH_ATTN_BWD_GKGV_DOT_LOOP:
+    setp.ge.u32 %p3, %r42, %r8;
+    @%p3 bra FLASH_ATTN_BWD_GKGV_DOT_DONE;
+    mul.lo.u32 %r43, %r14, %r5;
+    add.u32 %r43, %r43, %r40;
+    mul.lo.u32 %r43, %r43, %r6;
+    add.u32 %r44, %r17, %r42;
+    add.u32 %r45, %r43, %r44;
+    mul.wide.u32 %rd30, %r45, 2;
+    add.s64 %rd31, %rd1, %rd30;
+    ld.global.u16 %r46, [%rd31];
+    shl.b32 %r47, %r46, 16;
+    mov.b32 %f24, %r47;
+    mul.lo.u32 %r48, %r14, %r5;
+    add.u32 %r48, %r48, %r13;
+    mul.lo.u32 %r48, %r48, %r6;
+    add.u32 %r49, %r48, %r44;
+    mul.wide.u32 %rd32, %r49, 2;
+    add.s64 %rd33, %rd2, %rd32;
+    ld.global.u16 %r50, [%rd33];
+    shl.b32 %r51, %r50, 16;
+    mov.b32 %f25, %r51;
+    fma.rn.f32 %f22, %f24, %f25, %f22;
+    mul.wide.u32 %rd34, %r45, 2;
+    add.s64 %rd35, %rd7, %rd34;
+    ld.global.u16 %r52, [%rd35];
+    shl.b32 %r53, %r52, 16;
+    mov.b32 %f26, %r53;
+    mul.wide.u32 %rd36, %r49, 2;
+    add.s64 %rd37, %rd3, %rd36;
+    ld.global.u16 %r54, [%rd37];
+    shl.b32 %r55, %r54, 16;
+    mov.b32 %f27, %r55;
+    fma.rn.f32 %f23, %f26, %f27, %f23;
+    add.u32 %r42, %r42, 1;
+    bra FLASH_ATTN_BWD_GKGV_DOT_LOOP;
+
+FLASH_ATTN_BWD_GKGV_DOT_DONE:
+    mul.f32 %f28, %f22, %f4;
+    sub.f32 %f28, %f28, %f19;
+    mul.f32 %f28, %f28, %f5;
+    ex2.approx.ftz.f32 %f29, %f28;
+    div.rn.f32 %f29, %f29, %f20;
+    mul.lo.u32 %r56, %r14, %r5;
+    add.u32 %r56, %r56, %r40;
+    mul.lo.u32 %r56, %r56, %r6;
+    add.u32 %r57, %r17, %r16;
+    add.u32 %r58, %r56, %r57;
+    mul.wide.u32 %rd38, %r58, 2;
+    add.s64 %rd39, %rd7, %rd38;
+    ld.global.u16 %r59, [%rd39];
+    shl.b32 %r60, %r59, 16;
+    mov.b32 %f33, %r60;
+    fma.rn.f32 %f32, %f29, %f33, %f32;
+    sub.f32 %f34, %f23, %f21;
+    mul.f32 %f34, %f34, %f29;
+    mul.f32 %f34, %f34, %f4;
+    mul.wide.u32 %rd40, %r58, 2;
+    add.s64 %rd41, %rd1, %rd40;
+    ld.global.u16 %r61, [%rd41];
+    shl.b32 %r62, %r61, 16;
+    mov.b32 %f35, %r62;
+    fma.rn.f32 %f31, %f34, %f35, %f31;
+    add.u32 %r40, %r40, 1;
+    bra FLASH_ATTN_BWD_GKGV_TOKEN_LOOP;
+
+FLASH_ATTN_BWD_GKGV_DONE:
+    mul.wide.u32 %rd42, %r10, 4;
+    add.s64 %rd43, %rd9, %rd42;
+    st.global.f32 [%rd43], %f30;
+    add.s64 %rd44, %rd10, %rd42;
+    st.global.f32 [%rd44], %f31;
+    add.s64 %rd45, %rd11, %rd42;
+    st.global.f32 [%rd45], %f32;
+
+DONE_FLASH_ATTN_BF16_BWD_SCALAR:
+    ret;
+}

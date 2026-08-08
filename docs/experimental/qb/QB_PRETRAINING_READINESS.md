@@ -1,5 +1,9 @@
 # QB-Native Pretraining Readiness
 
+> Experimental, point-in-time planning document. Cloud paths use placeholders;
+> commands require caller-owned data and infrastructure and are not part of the
+> public validation gate. See `docs/history/gcp/` for dated private-run notes.
+
 This phase turns the proven memory-transformer hard path into a pretraining
 system with real source governance, a production tokenizer, learning sanity
 checks, and performance baselines.
@@ -52,7 +56,7 @@ the target scale. Smoke mode proves the machinery but is not a production
 corpus gate.
 
 Production slices should be stored in
-`gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/`.
+`gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/`.
 The full tokenizer hard path can receive those slices as local files, flat
 local directories, single-object `gs://` URIs, or flat `gs://` prefixes ending
 in `/`. `gs://` inputs are staged onto the Vertex worker's local disk for the
@@ -76,17 +80,17 @@ record filters run.
 Currently staged source slices:
 
 ```text
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/dolma-v1_7/dolma-v1_7-100m.jsonl
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/dolma-v1_7/dolma-v1_7-100m.report.json
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/nemotron-cc-high-actual/nemotron-cc-high-actual-sample.jsonl
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/nemotron-cc-high-actual/nemotron-cc-high-actual-sample.report.json
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/dolma3-dolmino-mix-100b-1125/dolmino-100m.jsonl
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/dolma3-dolmino-mix-100b-1125/dolmino-100m.report.json
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/nemotron-cc-math/nemotron-cc-math-sample.jsonl
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/nemotron-cc-math/nemotron-cc-math-sample.report.json
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/vecl-qb-v1-hard/corpus.jsonl
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/vecl-qb-v1-hard/metadata.json
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices/source-slice-inventory.json
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/dolma-v1_7/dolma-v1_7-100m.jsonl
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/dolma-v1_7/dolma-v1_7-100m.report.json
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/nemotron-cc-high-actual/nemotron-cc-high-actual-sample.jsonl
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/nemotron-cc-high-actual/nemotron-cc-high-actual-sample.report.json
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/dolma3-dolmino-mix-100b-1125/dolmino-100m.jsonl
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/dolma3-dolmino-mix-100b-1125/dolmino-100m.report.json
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/nemotron-cc-math/nemotron-cc-math-sample.jsonl
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/nemotron-cc-math/nemotron-cc-math-sample.report.json
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/vecl-qb-v1-hard/corpus.jsonl
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/vecl-qb-v1-hard/metadata.json
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices/source-slice-inventory.json
 ```
 
 The first external rehearsal slices are staged:
@@ -106,7 +110,7 @@ sources.
 The first larger sharded source-slice rehearsal is staged under:
 
 ```text
-gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices-1b-rehearsal/
+gs://<artifact-bucket>/heirloom/qb-native-pretraining-v1/source-slices-1b-rehearsal/
 ```
 
 It records all `5` planned sources available, `0` pending sources,
@@ -198,7 +202,7 @@ binary shards, `loader.kind="binary_shard_streaming"`, and
 
 Source governance verdicts are tracked in `QB_SOURCE_GOVERNANCE.md`. The
 current rule is conservative: Codex/Heirloom performs first-pass evidence
-review, Andrew/project owner approves sources for this research build, and
+review, the project owner approves sources for this research build, and
 formal legal review is reserved for commercial/company policy or ambiguous
 redistribution terms.
 
@@ -208,7 +212,7 @@ The first blend metadata contract is `heirloom.corpus_blend`, generated with:
 
 ```bash
 cargo run --bin heirloom -- data corpus-blend \
-  --qb-root /Users/andrewverdiramo/Desktop/VECL-QB/data \
+  --qb-root /path/to/vecl-qb/data \
   --out /tmp/heirloom-qb-native-corpus-blend.json \
   --blend-id qb-native-pretraining-v1 \
   --tokenizer-vocab-size 32768
@@ -320,7 +324,7 @@ path.
 
 The first full-exposure 32K governed-blend Vertex gate passed on 2026-06-20:
 custom job `8664974044392587264`, artifact prefix
-`gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/reference-runs/heirloom-validate-quick-20260620-164906/`.
+`gs://<artifact-bucket>/heirloom/reference-runs/heirloom-validate-quick-20260620-164906/`.
 It reused the prepared manifest from
 `heirloom-validate-quick-20260620-140258`, skipped `data materialize-blend`,
 and recorded `prepared_manifest_reused=true` with
@@ -726,7 +730,7 @@ This phase is complete when:
   config, and validation metrics.
 - The governed materializer emits the production manifest v2 binary-shard
   dataset from approved source slices.
-- VECL-QB v1-hard is ingested from `/Users/andrewverdiramo/Desktop/VECL-QB/data`
+- VECL-QB v1-hard is ingested from `/path/to/vecl-qb/data`
   with source metadata intact.
 - Product-key lookup has parity/stress tests.
 - A small learning sanity ladder shows loss improvement.

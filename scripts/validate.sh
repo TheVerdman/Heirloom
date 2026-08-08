@@ -8,6 +8,7 @@ run() {
   "$@"
 }
 
+run ./scripts/check_toolchain.sh
 run cargo fmt --all --check
 run bash -n scripts/cuda_train_memory_lm_fixture.sh
 run bash -n scripts/run_learning_sanity_ladder.sh
@@ -20,7 +21,7 @@ run cargo run --bin heirloom -- readiness validate-learning-sanity --manifest te
 run cargo run --bin heirloom -- readiness validate-learning-sanity --manifest tests/fixtures/learning_sanity/longer-32k-blend-valid.json
 run cargo run --bin heirloom -- padawan validate --episodes padawan/fixtures/episode_valid.jsonl --artifact-root padawan/fixtures
 run cargo run --bin heirloom -- padawan verify --episodes padawan/fixtures/episode_valid.jsonl --artifact-root padawan/fixtures
-run cargo test --workspace
+run ./scripts/test_cpu.sh
 run cargo clippy --workspace --all-targets -- -D warnings
 run cargo run --bin train
 run cargo run --bin classify

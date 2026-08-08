@@ -61,6 +61,26 @@ fn npy_writes_logical_data_for_non_contiguous_views() {
 }
 
 #[test]
+fn npy_rejects_overflowing_shape_before_reading_payload() {
+    let dir = temp_dir("npy_shape_overflow");
+    let path = dir.join("overflow.npy");
+    let header = format!(
+        "{{'descr': '<f4', 'fortran_order': False, 'shape': ({}, 2), }}",
+        usize::MAX
+    );
+    let mut bytes = b"\x93NUMPY".to_vec();
+    bytes.extend_from_slice(&[1, 0]);
+    bytes.extend_from_slice(&(header.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(header.as_bytes());
+    fs::write(&path, bytes).unwrap();
+
+    let error = npy::read_npy(&path, false).expect_err("overflowing shape must be rejected");
+    assert!(error.to_string().contains("overflows usize element count"));
+
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn rng_is_deterministic_for_uniform_and_normal_sequences() {
     let mut a = HeirloomRng::new(42);
     let mut b = HeirloomRng::new(42);
@@ -73,6 +93,19 @@ fn rng_is_deterministic_for_uniform_and_normal_sequences() {
     let normal_a = (0..8).map(|_| a.normal_f32()).collect::<Vec<_>>();
     let normal_b = (0..8).map(|_| b.normal_f32()).collect::<Vec<_>>();
     assert_close(&normal_a, &normal_b);
+}
+
+#[test]
+fn tensor_and_rng_shape_apis_reject_element_count_overflow() {
+    assert!(Tensor::zeros(&[usize::MAX, 2], false).is_err());
+
+    let mut rng = HeirloomRng::new(42);
+    assert!(rng
+        .uniform_tensor(&[usize::MAX, 2], -1.0, 1.0, false)
+        .is_err());
+    assert!(rng
+        .normal_tensor(&[usize::MAX, 2], 0.0, 1.0, false)
+        .is_err());
 }
 
 #[test]

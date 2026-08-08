@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 REQUIRED_PERFORMANCE_FIELDS = [
     "tokens_seen",
     "train_elapsed_ms",

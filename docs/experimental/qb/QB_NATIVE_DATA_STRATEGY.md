@@ -1,5 +1,9 @@
 # QB-Native Data Strategy
 
+> Experimental design. Any `gs://<artifact-bucket>` value is a placeholder for
+> caller-owned private infrastructure, not a public or repository-managed
+> dataset location.
+
 Status: draft
 Date: 2026-06-10
 
@@ -436,7 +440,7 @@ collections and derived token-dataset manifests:
   "created_at": "2026-06-10T00:00:00Z",
   "tokenizer": {
     "id": "heirloom-bpe-32768-v0",
-    "path": "gs://vecl-qb-artifacts/tokenizers/heirloom-bpe-32768-v0.json",
+    "path": "gs://<artifact-bucket>/tokenizers/heirloom-bpe-32768-v0.json",
     "sha256": "..."
   },
   "sources": [

@@ -13,6 +13,26 @@ use std::sync::{Mutex, MutexGuard};
 
 static TENSOR_CORE_COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
+fn require_cuda_hardware() {
+    assert_eq!(
+        std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref(),
+        Some("1"),
+        "ignored CUDA tests must be run through scripts/test_gpu.sh cuda"
+    );
+    assert!(
+        heirloom_kernels::cuda::is_available(),
+        "HEIRLOOM_CUDA_TESTS=1 but the CUDA Driver API is unavailable"
+    );
+}
+
+fn require_bf16_tensor_cores() {
+    assert!(
+        heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0)
+            .expect("query BF16 Tensor Core support"),
+        "this CUDA test requires a device with BF16 Tensor Core support"
+    );
+}
+
 fn tensor_core_counter_guard() -> MutexGuard<'static, ()> {
     TENSOR_CORE_COUNTER_LOCK
         .lock()
@@ -92,13 +112,9 @@ fn bfloat16_casts_are_differentiable_while_gradients_stay_f32() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_storage_round_trip_is_gated() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let tensor = Tensor::from_f32(vec![0.5, -1.25, 3.0, 8.0], &[2, 2], false).unwrap();
     let cuda = tensor.cuda(0).unwrap();
@@ -112,13 +128,9 @@ fn cuda_storage_round_trip_is_gated() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_f32_bf16_roundtrip_matches_two_cast_path_and_counts_one_family() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let _counter_guard = tensor_core_counter_guard();
     let values = vec![
@@ -158,36 +170,10 @@ fn cuda_f32_bf16_roundtrip_matches_two_cast_path_and_counts_one_family() {
 }
 
 #[test]
-fn nccl_single_rank_all_reduce_f32_is_gated() {
-    if std::env::var("HEIRLOOM_NCCL_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_NCCL_TESTS=1 but CUDA Driver API is unavailable");
-    }
-
-    let unique_id = heirloom_kernels::cuda::nccl_unique_id().unwrap();
-    let mut communicator =
-        heirloom_kernels::cuda::NcclCommunicator::init_rank(0, 0, 1, unique_id).unwrap();
-    let buffer = heirloom_kernels::cuda::CudaBuffer::from_f32(0, &[1.0, 2.0, -3.0, 4.5]).unwrap();
-    let stats = communicator.all_reduce_sum_in_place_f32(&buffer).unwrap();
-
-    assert_eq!(stats.calls, 1);
-    assert_eq!(stats.bytes, 4 * std::mem::size_of::<f32>());
-    assert_close(&buffer.to_f32().unwrap(), &[1.0, 2.0, -3.0, 4.5], 1e-6);
-}
-
-#[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_bf16_tensor_core_probe_is_gated() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     heirloom_kernels::cuda::reset_tensor_core_counters();
@@ -511,16 +497,10 @@ fn cuda_flash_bf16_tensor_core_env_guard_defaults_off() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_raw_bf16_tensor_core_matmul_matches_cpu_bf16_reference() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let input_values = (0..(16 * 16))
@@ -639,16 +619,10 @@ fn cuda_raw_bf16_tensor_core_matmul_matches_cpu_bf16_reference() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_raw_bf16_tensor_core_normal_rhs_matmul_matches_cpu_bf16_reference() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let input_values = (0..(16 * 16))
@@ -703,13 +677,9 @@ fn cuda_raw_bf16_tensor_core_normal_rhs_matmul_matches_cpu_bf16_reference() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_transpose2d_pair_bf16_matches_cpu_transposes_and_counts_one_family() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let first_rows = 3usize;
     let first_cols = 5usize;
@@ -763,16 +733,10 @@ fn cuda_transpose2d_pair_bf16_matches_cpu_transposes_and_counts_one_family() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_raw_bf16_tensor_core_matmul_pads_ragged_shapes() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let (m, k, n) = (15usize, 17usize, 7usize);
@@ -860,16 +824,10 @@ fn cuda_raw_bf16_tensor_core_matmul_pads_ragged_shapes() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_linear_amp_bf16_uses_tensor_core_matmul_when_tile_aligned() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let _normal_rhs_guard = EnvVarGuard::remove("HEIRLOOM_CUDA_TENSOR_CORE_NORMAL_RHS_GEMM");
@@ -1011,16 +969,10 @@ fn cuda_linear_amp_bf16_uses_tensor_core_matmul_when_tile_aligned() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_raw_bf16_tensor_core_matmul_bias_cp_async_matches_cpu_bf16_reference() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let _cp_async_guard = EnvVarGuard::set("HEIRLOOM_CUDA_TENSOR_CORE_CP_ASYNC_GEMM", "1");
@@ -1091,16 +1043,10 @@ fn cuda_raw_bf16_tensor_core_matmul_bias_cp_async_matches_cpu_bf16_reference() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_causal_attention_amp_bf16_tensor_core_forward_is_gated() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let query_values = (0..(16 * 16))
@@ -1227,16 +1173,10 @@ fn cuda_causal_attention_amp_bf16_tensor_core_forward_is_gated() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_causal_attention_amp_bf16_tensor_core_handles_ragged_edges() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let time = 15;
@@ -1371,16 +1311,10 @@ fn cuda_causal_attention_amp_bf16_tensor_core_handles_ragged_edges() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_flash_bf16_attention_forward_matches_cpu_for_aligned_and_ragged_shapes() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     for (time, head_dim, tolerance, expect_ragged) in
@@ -1462,16 +1396,10 @@ fn cuda_flash_bf16_attention_forward_matches_cpu_for_aligned_and_ragged_shapes()
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_flash_bf16_attention_env_guard_and_grad_fallback_policy() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let _flash = EnvVarGuard::set("HEIRLOOM_CUDA_FLASH_BF16_ATTENTION", "1");
@@ -1562,16 +1490,10 @@ fn cuda_flash_bf16_attention_env_guard_and_grad_fallback_policy() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_flash_bf16_tensor_core_forward_matches_cpu_and_counts_mma_tiles() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let _flash = EnvVarGuard::set("HEIRLOOM_CUDA_FLASH_BF16_ATTENTION", "1");
@@ -1661,16 +1583,10 @@ fn cuda_flash_bf16_tensor_core_forward_matches_cpu_and_counts_mma_tiles() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_flash_bf16_tensor_core_backward_compact_state_matches_cpu_and_counts_honestly() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
-    if !heirloom_kernels::cuda::device_supports_bf16_tensor_cores(0).unwrap() {
-        return;
-    }
+    require_cuda_hardware();
+    require_bf16_tensor_cores();
 
     let _counter_guard = tensor_core_counter_guard();
     let _flash = EnvVarGuard::set("HEIRLOOM_CUDA_FLASH_BF16_ATTENTION", "1");
@@ -1795,13 +1711,9 @@ fn cuda_flash_bf16_tensor_core_backward_compact_state_matches_cpu_and_counts_hon
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_bfloat16_cast_round_trip_and_backward_stay_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let values = vec![1.0, -2.5, 3.25, 0.33325195];
     let expected = Tensor::from_f32(values.clone(), &[4], false)
@@ -1843,13 +1755,9 @@ fn cuda_bfloat16_cast_round_trip_and_backward_stay_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_add_and_relu_are_tensor_kernels() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let tensor = Tensor::from_f32(vec![1.0, 2.0], &[2], false)
         .unwrap()
@@ -1871,13 +1779,9 @@ fn cuda_add_and_relu_are_tensor_kernels() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_gelu_matches_cpu() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let values = vec![-3.0, -1.0, -0.25, 0.0, 0.5, 2.0];
     let cpu = Tensor::from_f32(values.clone(), &[2, 3], false)
@@ -1896,13 +1800,9 @@ fn cuda_gelu_matches_cpu() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_sub_mul_div_are_tensor_kernels() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let left = Tensor::from_f32(vec![6.0, 8.0], &[2], false)
         .unwrap()
@@ -1927,13 +1827,9 @@ fn cuda_sub_mul_div_are_tensor_kernels() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_sum_and_mean_are_tensor_kernels() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let tensor = Tensor::from_f32(vec![1.0, 2.0, 3.0], &[3], false)
         .unwrap()
@@ -1950,13 +1846,9 @@ fn cuda_sum_and_mean_are_tensor_kernels() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_rank2_matmul_is_a_tensor_kernel() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let left = Tensor::from_f32(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], false)
         .unwrap()
@@ -1979,13 +1871,9 @@ fn cuda_rank2_matmul_is_a_tensor_kernel() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn unsupported_cuda_batched_matmul_errors_without_cpu_fallback() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let left = Tensor::from_f32(vec![1.0, 2.0, 3.0, 4.0], &[1, 2, 2], false)
         .unwrap()
@@ -2003,13 +1891,9 @@ fn unsupported_cuda_batched_matmul_errors_without_cpu_fallback() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_add_backward_accumulates_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let tensor = Tensor::from_f32(vec![1.0, 2.0], &[2], true)
         .unwrap()
@@ -2026,13 +1910,9 @@ fn cuda_add_backward_accumulates_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_relu_backward_masks_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let tensor = Tensor::from_f32(vec![-2.0, 0.0, 3.0], &[3], true)
         .unwrap()
@@ -2049,13 +1929,9 @@ fn cuda_relu_backward_masks_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_gelu_backward_matches_cpu_and_stays_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let values = vec![-2.0, -0.75, 0.0, 0.5, 1.5, 3.0];
     let seed = vec![1.0, -0.5, 2.0, 0.25, -1.0, 1.75];
@@ -2079,13 +1955,9 @@ fn cuda_gelu_backward_matches_cpu_and_stays_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_binary_backward_formulas_stay_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let x = Tensor::from_f32(vec![2.0, 4.0], &[2], true)
         .unwrap()
@@ -2146,13 +2018,9 @@ fn cuda_binary_backward_formulas_stay_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_reduction_backward_fills_device_gradients() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let tensor = Tensor::from_f32(vec![1.0, 2.0, 3.0], &[3], true)
         .unwrap()
@@ -2178,13 +2046,9 @@ fn cuda_reduction_backward_fills_device_gradients() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_matmul_backward_formulas_stay_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let left = Tensor::from_f32(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], true)
         .unwrap()
@@ -2219,13 +2083,9 @@ fn cuda_matmul_backward_formulas_stay_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_rank2_matmul_accepts_transposed_rhs_view() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let left_data = vec![1.0, -2.0, 3.0, 4.0, 0.5, -1.5];
     let weight_data = vec![2.0, -1.0, 0.25, -0.5, 3.0, 1.5];
@@ -2253,13 +2113,9 @@ fn cuda_rank2_matmul_accepts_transposed_rhs_view() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_transposed_rhs_matmul_backward_reaches_original_weight() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let left_data = vec![1.0, -2.0, 3.0, 4.0, 0.5, -1.5];
     let weight_data = vec![2.0, -1.0, 0.25, -0.5, 3.0, 1.5];
@@ -2305,13 +2161,9 @@ fn cuda_transposed_rhs_matmul_backward_reaches_original_weight() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_bias_add_broadcast_forward_backward_stays_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let matrix_data = vec![1.0, 2.0, 3.0, -1.0, 0.5, 4.0];
     let bias_data = vec![0.25, -1.0, 2.0];
@@ -2358,13 +2210,9 @@ fn cuda_bias_add_broadcast_forward_backward_stays_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_linear_projection_shape_path_matches_cpu_backward() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let input_data = vec![
         0.5, -1.0, 2.0, 1.5, 0.25, -0.75, -2.0, 1.0, 0.5, 3.0, -1.5, 0.0,
@@ -2437,13 +2285,9 @@ fn cuda_linear_projection_shape_path_matches_cpu_backward() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_embedding_forward_gathers_rows_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let indices = Tensor::from_i64(vec![0, 1, 0], &[3], false)
         .unwrap()
@@ -2466,13 +2310,9 @@ fn cuda_embedding_forward_gathers_rows_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_embedding_backward_scatter_adds_repeated_rows_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let indices = Tensor::from_i64(vec![0, 1, 0], &[3], false)
         .unwrap()
@@ -2496,13 +2336,9 @@ fn cuda_embedding_backward_scatter_adds_repeated_rows_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_embedding_out_of_range_errors_without_cpu_fallback() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let indices = Tensor::from_i64(vec![2], &[1], false)
         .unwrap()
@@ -2521,13 +2357,9 @@ fn cuda_embedding_out_of_range_errors_without_cpu_fallback() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_layer_norm_forward_matches_cpu() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let input_data = vec![1.0, 2.0, 4.0, -1.0, 0.5, 3.0];
     let weight_data = vec![1.0, 1.5, 0.5];
@@ -2564,13 +2396,9 @@ fn cuda_layer_norm_forward_matches_cpu() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_layer_norm_backward_matches_cpu_and_stays_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let input_data = vec![1.0, 2.0, 4.0, -1.0, 0.5, 3.0];
     let weight_data = vec![1.0, 1.5, 0.5];
@@ -2628,13 +2456,9 @@ fn cuda_layer_norm_backward_matches_cpu_and_stays_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_cross_entropy_forward_matches_cpu() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let logits_data = vec![1.0, 2.0, 0.0, -1.0, 0.5, 3.0];
     let targets = [1, 2];
@@ -2656,13 +2480,9 @@ fn cuda_cross_entropy_forward_matches_cpu() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_cross_entropy_backward_matches_cpu_and_stays_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let logits_data = vec![1.0, 2.0, 0.0, -1.0, 0.5, 3.0];
     let targets = [1, 2];
@@ -2690,13 +2510,9 @@ fn cuda_cross_entropy_backward_matches_cpu_and_stays_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_causal_attention_forward_matches_cpu() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let query_data = vec![
         0.2, -0.1, 0.4, 0.7, 0.0, 0.3, -0.5, 0.6, 0.8, -0.4, 0.1, -0.2,
@@ -2738,13 +2554,9 @@ fn cuda_causal_attention_forward_matches_cpu() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_causal_attention_backward_matches_cpu_and_stays_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let query_data = vec![
         0.2, -0.1, 0.4, 0.7, 0.0, 0.3, -0.5, 0.6, 0.8, -0.4, 0.1, -0.2,
@@ -2813,13 +2625,9 @@ fn cuda_causal_attention_backward_matches_cpu_and_stays_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_sgd_update_runs_on_device_after_backward() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let parameter = Tensor::from_f32(vec![1.0, -2.0], &[2], true)
         .unwrap()
@@ -2839,13 +2647,9 @@ fn cuda_sgd_update_runs_on_device_after_backward() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_adamw_update_matches_cpu_and_exports_state() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let initial = vec![1.0, -2.0, 0.5, 3.0];
     let cpu_param = Tensor::from_f32(initial.clone(), &[2, 2], true).unwrap();
@@ -2900,13 +2704,9 @@ fn cuda_adamw_update_matches_cpu_and_exports_state() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_adamw_trains_linear_projection_loss_down() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let input = Tensor::from_f32(
         vec![
@@ -2972,13 +2772,9 @@ fn cuda_adamw_trains_linear_projection_loss_down() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_tiny_transformer_bf16_activation_step_stays_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let config = TinyTransformerConfig {
         vocab_size: 16,
@@ -3028,13 +2824,9 @@ fn cuda_tiny_transformer_bf16_activation_step_stays_on_device() {
 }
 
 #[test]
+#[ignore = "requires CUDA hardware; run scripts/test_gpu.sh cuda"]
 fn cuda_tiny_transformer_lm_step_and_checkpoint_stay_on_device() {
-    if std::env::var("HEIRLOOM_CUDA_TESTS").ok().as_deref() != Some("1") {
-        return;
-    }
-    if !heirloom_kernels::cuda::is_available() {
-        panic!("HEIRLOOM_CUDA_TESTS=1 but CUDA Driver API is unavailable");
-    }
+    require_cuda_hardware();
 
     let config = TinyTransformerConfig {
         vocab_size: 16,

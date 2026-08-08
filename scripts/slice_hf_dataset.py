@@ -29,12 +29,8 @@ import urllib.request
 from collections.abc import Iterator
 from typing import Any
 
-
-DEFAULT_GCS_PREFIX = (
-    "gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/"
-    "heirloom/qb-native-pretraining-v1/source-slices"
-)
-DEFAULT_VECL_QB_ENV = "/Users/andrewverdiramo/Desktop/VECL-QB/.env"
+DEFAULT_GCS_PREFIX = os.environ.get("HEIRLOOM_QB_SOURCE_SLICE_GCS_PREFIX", "")
+DEFAULT_HF_ENV_FILE = os.environ.get("HF_ENV_FILE")
 COMPRESSED_SUFFIXES = (".gz", ".zst", ".zstd")
 SECRET_MARKERS = (
     "begin rsa private key",
@@ -201,7 +197,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gcs-prefix",
         default=DEFAULT_GCS_PREFIX,
-        help="Destination GCS prefix for uploaded slices.",
+        help=(
+            "Destination GCS prefix for uploaded slices. May also be set with "
+            "HEIRLOOM_QB_SOURCE_SLICE_GCS_PREFIX; required with --upload."
+        ),
     )
     parser.add_argument(
         "--project",
@@ -215,7 +214,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--hf-env-file",
-        default=os.environ.get("HF_ENV_FILE", DEFAULT_VECL_QB_ENV),
+        default=DEFAULT_HF_ENV_FILE,
         help="Optional env file to read if --hf-token-env is unset.",
     )
     return parser.parse_args()
@@ -699,6 +698,11 @@ def reached_target(args: argparse.Namespace, text_bytes: int) -> bool:
 
 def main() -> int:
     args = parse_args()
+    if args.upload and not args.gcs_prefix:
+        raise SystemExit(
+            "--gcs-prefix (or HEIRLOOM_QB_SOURCE_SLICE_GCS_PREFIX) is required "
+            "with --upload"
+        )
     apply_preset(args)
     out_path = pathlib.Path(args.out).expanduser()
     report_path = pathlib.Path(args.report).expanduser() if args.report else out_path.with_suffix(out_path.suffix + ".report.json")

@@ -2,8 +2,13 @@
 name = "heirloom"
 version = "0.1.0"
 edition = "2021"
-description = "A small Rust tensor/autograd runtime prototype built to expose PyTorch-like design pressure."
+rust-version = "1.95"
+description = "Reviewable Rust tensor/autograd runtime with checked CPU/CUDA kernels and a memory-transformer integration."
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/TheVerdman/Heirloom"
+homepage = "https://github.com/TheVerdman/Heirloom"
+readme = "README.md"
+publish = false
 
 [workspace]
 members = [".", "heirloom-kernels", "heirloom-python", "heirloom-skill"]

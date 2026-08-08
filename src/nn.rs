@@ -1,3 +1,6 @@
+//! Neural-network modules, generation helpers, and optimizers built on
+//! [`Tensor`](crate::Tensor).
+
 use crate::amp::{self, AmpBf16OpDecision, AmpBf16Policy};
 use crate::rng::HeirloomRng;
 use crate::{npy, DType, Device, Result, Tensor, TensorError};
@@ -8,9 +11,14 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
+/// Minimal module contract used for composition, device movement, state dicts,
+/// and optimization.
 pub trait Module {
+    /// Computes the module output without changing parameter identity.
     fn forward(&self, input: &Tensor) -> Result<Tensor>;
+    /// Returns trainable tensor handles in stable optimizer order.
     fn parameters(&self) -> Vec<Tensor>;
+    /// Returns stable checkpoint names paired with the same parameter handles.
     fn named_parameters(&self, prefix: &str) -> Vec<(String, Tensor)> {
         self.parameters()
             .into_iter()
@@ -272,6 +280,7 @@ fn amp_bf16_attention_tensor_core_required() -> bool {
     )
 }
 
+/// Affine projection with weight layout `[out_features, in_features]`.
 pub struct Linear {
     pub in_features: usize,
     pub out_features: usize,
@@ -478,6 +487,7 @@ impl Module for Linear {
 }
 
 #[derive(Default)]
+/// Elementwise rectified-linear activation.
 pub struct ReLU;
 
 impl ReLU {
@@ -501,6 +511,7 @@ impl Module for ReLU {
 }
 
 #[derive(Default)]
+/// Elementwise Gaussian error linear unit.
 pub struct Gelu;
 
 impl Gelu {
@@ -534,6 +545,7 @@ impl Module for Gelu {
     }
 }
 
+/// Trainable embedding table indexed by an integer tensor.
 pub struct Embedding {
     pub num_embeddings: usize,
     pub embedding_dim: usize,
@@ -596,6 +608,7 @@ impl Module for Embedding {
     }
 }
 
+/// Layer normalization over the final dimension with trainable scale/bias.
 pub struct LayerNorm {
     pub features: usize,
     pub eps: f64,
@@ -651,6 +664,7 @@ impl Module for LayerNorm {
     }
 }
 
+/// Decoder-style causal multi-head self-attention.
 pub struct CausalSelfAttention {
     pub d_model: usize,
     pub n_heads: usize,
@@ -822,6 +836,7 @@ impl Module for CausalSelfAttention {
     }
 }
 
+/// Transformer feed-forward sublayer (`Linear` → GELU → `Linear`).
 pub struct FeedForward {
     fc1: Linear,
     gelu: Gelu,
@@ -887,6 +902,7 @@ impl Module for FeedForward {
     }
 }
 
+/// Pre-normalized causal-attention and feed-forward residual block.
 pub struct TransformerBlock {
     ln1: LayerNorm,
     attention: CausalSelfAttention,
@@ -1003,6 +1019,7 @@ impl Module for TransformerBlock {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+/// Shape configuration for the bounded decoder-only reference model.
 pub struct TinyTransformerConfig {
     pub vocab_size: usize,
     pub block_size: usize,
@@ -1125,6 +1142,11 @@ enum ForwardPrecisionPolicy {
     AmpBf16,
 }
 
+/// Small decoder-only language model used to exercise the complete runtime.
+///
+/// It is a systems-validation model, not a pretrained general-purpose model.
+/// Parameters, autograd, AMP routing, evaluation, generation, and checkpointing
+/// all use the same public runtime paths as the memory transformer.
 pub struct TinyTransformerLm {
     pub config: TinyTransformerConfig,
     token_embedding: Embedding,
@@ -1789,6 +1811,7 @@ fn position_ids_tensor(batch: usize, time: usize, device: Device) -> Result<Tens
     Tensor::from_i64(position_ids, &[batch, time], false)?.to_device(device)
 }
 
+/// Ordered module composition whose parameters retain layer order.
 pub struct Sequential {
     layers: Vec<Box<dyn Module>>,
 }
@@ -1854,11 +1877,15 @@ pub fn sgd_step(parameters: &[Tensor], lr: f32) -> Result<()> {
     Ok(())
 }
 
+/// Common optimizer lifecycle for accumulated parameter gradients.
 pub trait Optimizer {
+    /// Clears gradients on all tracked parameters.
     fn zero_grad(&self);
+    /// Applies one optimizer update or returns a validation/kernel error.
     fn step(&self) -> Result<()>;
 }
 
+/// Stateless stochastic-gradient descent over a fixed parameter list.
 pub struct Sgd {
     parameters: Vec<Tensor>,
     lr: f32,
@@ -1895,6 +1922,7 @@ impl Optimizer for Sgd {
     }
 }
 
+/// Serializable AdamW hyperparameters, step counter, and CPU moment buffers.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdamWState {
     pub step: usize,
@@ -1908,12 +1936,15 @@ pub struct AdamWState {
     pub v: Vec<Vec<f64>>,
 }
 
+/// AdamW optimizer with CPU and CUDA state plus explicit sparse-row update
+/// entry points for memory tables.
 pub struct AdamW {
     parameters: Vec<Tensor>,
     state: AdamWState,
     cuda_state: Vec<Option<AdamWCudaParamState>>,
 }
 
+/// Description of selected memory rows whose full gradients should be updated.
 pub struct SparseAdamWRowsUpdate {
     pub parameter_index: usize,
     pub selected_rows: Tensor,
@@ -1922,6 +1953,7 @@ pub struct SparseAdamWRowsUpdate {
     pub row_dim: usize,
 }
 
+/// Description of selected memory rows with a compact row-gradient tensor.
 pub struct SparseAdamWCompactRowsUpdate {
     pub parameter_index: usize,
     pub selected_rows: Tensor,
@@ -2932,6 +2964,7 @@ fn cuda_error(error: heirloom_kernels::cuda::CudaError) -> TensorError {
     TensorError::Device(error.to_string())
 }
 
+/// Saves named parameters as NumPy files plus a manifest under `dir`.
 pub fn save_state_dict(module: &dyn Module, dir: impl AsRef<Path>) -> Result<()> {
     let dir = dir.as_ref();
     fs::create_dir_all(dir)
@@ -2962,6 +2995,7 @@ pub fn save_state_dict(module: &dyn Module, dir: impl AsRef<Path>) -> Result<()>
     Ok(())
 }
 
+/// Loads a state dict after validating parameter names, shapes, and dtypes.
 pub fn load_state_dict(module: &dyn Module, dir: impl AsRef<Path>) -> Result<()> {
     let dir = dir.as_ref();
     let manifest_path = dir.join("state.tsv");

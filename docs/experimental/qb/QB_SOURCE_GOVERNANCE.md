@@ -26,7 +26,7 @@ source redistribution.
   - redistribution/storage constraints,
   - attribution/removal/opt-out requirements,
   - source URL and object/hash evidence in the slice inventory.
-- Andrew/project owner is the approval authority for this research build.
+- The project owner is the approval authority for this research build.
 - Formal legal review is only needed if this becomes commercial/company policy
   or if a source has ambiguous redistribution terms we still want to use.
 

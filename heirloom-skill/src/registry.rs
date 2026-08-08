@@ -3,21 +3,16 @@ use crate::util::{read_to_string, write_json_pretty};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TrustTier {
     Untrusted,
+    #[default]
     LocalDev,
     CommunityReviewed,
     HeirloomReviewed,
     HeirloomCore,
     Quarantined,
     Rejected,
-}
-
-impl Default for TrustTier {
-    fn default() -> Self {
-        Self::LocalDev
-    }
 }
 
 impl TrustTier {
@@ -36,19 +31,14 @@ impl TrustTier {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuditStatus {
     Unknown,
+    #[default]
     Pending,
     Passed,
     Failed,
     NeedsReview,
-}
-
-impl Default for AuditStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

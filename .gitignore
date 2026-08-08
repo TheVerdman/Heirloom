@@ -3,9 +3,11 @@
 
 # Local parity/interop environment
 /.venv/
+/.venv-parity/
 
 # Python/test caches
 /.pytest_cache/
+/.cache/
 __pycache__/
 *.py[cod]
 

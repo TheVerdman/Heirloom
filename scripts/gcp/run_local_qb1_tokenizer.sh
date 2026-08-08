@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUN_TS="${HEIRLOOM_QB1_TOKENIZER_RUN_TS:-$(date +%Y%m%d-%H%M%S)}"
 OUT_DIR="${HEIRLOOM_QB1_TOKENIZER_OUT_DIR:-$REPO_ROOT/runs/qb1-tokenizer-local-$RUN_TS}"
 
-: "${HEIRLOOM_QB1_TOKENIZER_UPLOAD_PREFIX:=gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/tokenizers/qb1-32k-$RUN_TS}"
+: "${HEIRLOOM_QB1_TOKENIZER_UPLOAD_PREFIX:=}"
 : "${HEIRLOOM_QB_TOKENIZER_HARDPATH_MODE:=full}"
 : "${HEIRLOOM_QB_TOKENIZER_HARDPATH_VOCAB:=32768}"
 : "${HEIRLOOM_QB_TOKENIZER_HARDPATH_SAMPLE_BYTES:=6000000000}"
@@ -15,7 +15,8 @@ OUT_DIR="${HEIRLOOM_QB1_TOKENIZER_OUT_DIR:-$REPO_ROOT/runs/qb1-tokenizer-local-$
 : "${HEIRLOOM_TOKENIZER_TRAIN_PROGRESS_EVERY_MERGES:=1000}"
 : "${HEIRLOOM_GCS_COPY_TOOL:=gcloud}"
 
-QB1_SOURCE_ROOT="gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/heirloom/qb-native-pretraining-v1/source-slices-1b-rehearsal"
+: "${HEIRLOOM_QB1_SOURCE_ROOT:?Set HEIRLOOM_QB1_SOURCE_ROOT to the governed gs:// source-slice prefix}"
+QB1_SOURCE_ROOT="${HEIRLOOM_QB1_SOURCE_ROOT%/}"
 : "${HEIRLOOM_QB_TOKENIZER_DOLMA_PATH:=${QB1_SOURCE_ROOT}/dolma-v1_7/}"
 : "${HEIRLOOM_QB_TOKENIZER_NEMOTRON_CC_PATH:=${QB1_SOURCE_ROOT}/nemotron-cc-high-actual/nemotron-cc-high-actual-sample.jsonl}"
 : "${HEIRLOOM_QB_TOKENIZER_OLMO3_PATH:=${QB1_SOURCE_ROOT}/dolma3-dolmino-mix-100b-1125/}"

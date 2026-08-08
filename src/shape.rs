@@ -190,13 +190,34 @@ pub(crate) fn validate_permutation(rank: usize, dims: &[usize]) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn max_storage_offset(shape: &[usize], strides: &[usize], offset: usize) -> usize {
-    offset
-        + shape
-            .iter()
-            .zip(strides.iter())
-            .map(|(dim, stride)| dim.saturating_sub(1).saturating_mul(*stride))
-            .sum::<usize>()
+pub(crate) fn checked_max_storage_offset(
+    shape: &[usize],
+    strides: &[usize],
+    offset: usize,
+) -> Result<usize> {
+    if shape.len() != strides.len() {
+        return Err(TensorError::Shape(format!(
+            "shape {:?} and strides {:?} must have the same rank",
+            shape, strides
+        )));
+    }
+    shape
+        .iter()
+        .zip(strides.iter())
+        .try_fold(offset, |current, (dim, stride)| {
+            let span = dim.saturating_sub(1).checked_mul(*stride).ok_or_else(|| {
+                TensorError::Shape(format!(
+                    "layout span overflows usize for shape {:?}, strides {:?}",
+                    shape, strides
+                ))
+            })?;
+            current.checked_add(span).ok_or_else(|| {
+                TensorError::Shape(format!(
+                    "layout offset overflows usize for shape {:?}, strides {:?}, offset {offset}",
+                    shape, strides
+                ))
+            })
+        })
 }
 
 fn dim_from_right(shape: &[usize], output_rank: usize, output_dim: usize) -> usize {
@@ -236,5 +257,13 @@ mod tests {
     fn negative_dims_normalize_against_rank() {
         assert_eq!(normalize_dim(3, -1).unwrap(), 2);
         assert!(normalize_dim(3, -4).is_err());
+    }
+
+    #[test]
+    fn storage_offset_validation_rejects_stride_and_offset_overflow() {
+        assert!(checked_max_storage_offset(&[3], &[usize::MAX], 0).is_err());
+        assert!(checked_max_storage_offset(&[1], &[1], usize::MAX).is_ok());
+        assert!(checked_max_storage_offset(&[2], &[1], usize::MAX).is_err());
+        assert!(checked_max_storage_offset(&[2], &[], 0).is_err());
     }
 }

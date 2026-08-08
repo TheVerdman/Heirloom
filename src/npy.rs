@@ -1,3 +1,4 @@
+use crate::shape::checked_numel;
 use crate::{DType, Device, Result, Tensor, TensorError};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -126,7 +127,9 @@ pub fn read_npy(path: impl AsRef<Path>, requires_grad: bool) -> Result<Tensor> {
     let header = std::str::from_utf8(&header)
         .map_err(|err| TensorError::Io(format!("npy header is not utf8/ascii: {err}")))?;
     let (dtype, shape) = parse_header(header)?;
-    let len = shape.iter().product::<usize>();
+    let len = checked_numel(&shape).map_err(|error| {
+        TensorError::Io(format!("npy shape has an invalid element count: {error}"))
+    })?;
     match dtype {
         DType::F32 => {
             let mut data = Vec::with_capacity(len);

@@ -3,7 +3,7 @@ set -euo pipefail
 
 out_dir="${1:-runs/qb-tokenizer-hardpath}"
 mode="${HEIRLOOM_QB_TOKENIZER_HARDPATH_MODE:-smoke}"
-qb_root="${HEIRLOOM_QB_TOKENIZER_HARDPATH_QB_ROOT:-/Users/andrewverdiramo/Desktop/VECL-QB/data}"
+qb_root="${HEIRLOOM_QB_TOKENIZER_HARDPATH_QB_ROOT:-}"
 vocab_size="${HEIRLOOM_QB_TOKENIZER_HARDPATH_VOCAB:-}"
 sample_bytes="${HEIRLOOM_QB_TOKENIZER_HARDPATH_SAMPLE_BYTES:-}"
 target_tokens="${HEIRLOOM_QB_TOKENIZER_HARDPATH_TARGET_TOKENS:-}"
@@ -580,7 +580,10 @@ dolma_path="${HEIRLOOM_QB_TOKENIZER_DOLMA_PATH:-}"
 nemotron_path="${HEIRLOOM_QB_TOKENIZER_NEMOTRON_CC_PATH:-}"
 olmo_path="${HEIRLOOM_QB_TOKENIZER_OLMO3_PATH:-}"
 math_path="${HEIRLOOM_QB_TOKENIZER_NEMOTRON_CC_MATH_PATH:-}"
-qb_path="${HEIRLOOM_QB_TOKENIZER_QB_V1_HARD_PATH:-$qb_root/synthetic/v1-hard/corpus.jsonl}"
+qb_path="${HEIRLOOM_QB_TOKENIZER_QB_V1_HARD_PATH:-}"
+if [[ -z "$qb_path" && -n "$qb_root" ]]; then
+  qb_path="${qb_root%/}/synthetic/v1-hard/corpus.jsonl"
+fi
 dolma_source_uri="$dolma_path"
 nemotron_source_uri="$nemotron_path"
 olmo_source_uri="$olmo_path"

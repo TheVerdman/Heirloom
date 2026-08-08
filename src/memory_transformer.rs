@@ -1,3 +1,11 @@
+//! Memory-augmented transformer integration built on the same tensor, autograd,
+//! module, optimizer, and CUDA paths as the dense reference model.
+//!
+//! This is a bounded systems prototype: exact lookup is suitable for small
+//! fixtures, product-key lookup is an inspectable candidate path, and sparse
+//! updates expose selected rows explicitly. It is not a production-scale ANN
+//! index or a claim of pretrained model quality.
+
 use crate::amp::{self, AmpBf16OpDecision};
 use crate::nn::{
     sample_token, CausalSelfAttention, Embedding, FeedForward, GeneratedTokenStep,
@@ -12,6 +20,7 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
+/// Which parameter subsets an optimizer step may update.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryUpdatePolicy {
@@ -22,6 +31,7 @@ pub enum MemoryUpdatePolicy {
     Frozen,
 }
 
+/// Sparse-memory fine-tuning policy applied to dense and memory parameters.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum SmftMode {
@@ -31,6 +41,7 @@ pub enum SmftMode {
     MaskedMemoryRows,
 }
 
+/// Memory candidate lookup implementation.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryLookupKind {
@@ -39,6 +50,11 @@ pub enum MemoryLookupKind {
     ProductKey,
 }
 
+/// Configuration and optimizer policy for one memory feed-forward layer.
+///
+/// The current implementation requires one memory head, positive dimensions,
+/// `memory_top_k <= memory_slots`, and square slot counts for product-key
+/// lookup. [`MemoryTransformerConfig::validate`] enforces the full contract.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryLayerConfig {
     pub memory_slots: usize,
@@ -54,6 +70,7 @@ pub struct MemoryLayerConfig {
     pub smft_mode: SmftMode,
 }
 
+/// Complete decoder and sparse-memory layout for [`MemoryTransformerLm`].
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryTransformerConfig {
     pub vocab_size: usize,
@@ -83,6 +100,7 @@ enum MemoryForwardPrecisionPolicy {
     AmpBf16,
 }
 
+/// Per-layer summary of rows selected by the most recent forward pass.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryLayerSelectionReport {
     pub block_index: usize,
@@ -91,6 +109,7 @@ pub struct MemoryLayerSelectionReport {
     pub selected_rows_device: String,
 }
 
+/// Aggregate, serializable memory-selection evidence.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemorySelectionReport {
     pub shared_memory: bool,
@@ -104,6 +123,7 @@ pub struct MemorySelectionReport {
     pub layers: Vec<MemoryLayerSelectionReport>,
 }
 
+/// Dense row-access counts used to construct or audit sparse update masks.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryAccessCounts {
     pub memory_slots: usize,
@@ -632,6 +652,10 @@ impl MemoryTables {
     }
 }
 
+/// Sparse top-k memory replacement for a transformer's dense feed-forward path.
+///
+/// The module records selected rows after forward so the optimizer and evidence
+/// reports can use the same routing decisions that produced the output.
 pub struct MemoryFeedForward {
     pub config: MemoryLayerConfig,
     query_proj: Linear,
@@ -644,6 +668,7 @@ pub struct MemoryFeedForward {
 }
 
 impl MemoryFeedForward {
+    /// Constructs validated projections and memory tables on CPU.
     pub fn new(d_model: usize, config: MemoryLayerConfig, rng: &mut HeirloomRng) -> Result<Self> {
         Self::new_with_tables(d_model, config, rng, None, true)
     }
@@ -1063,6 +1088,7 @@ impl MemoryBlockFeedForward {
     }
 }
 
+/// Transformer block containing either dense or memory feed-forward routing.
 pub struct MemoryTransformerBlock {
     pub index: usize,
     ln1: LayerNorm,
@@ -1182,6 +1208,12 @@ impl Module for MemoryTransformerBlock {
     }
 }
 
+/// Decoder-only language model with memory layers at explicitly selected block
+/// indices.
+///
+/// Use [`MemoryTransformerLm::memory_selection_report`] and
+/// [`MemoryTransformerLm::memory_sparse_adamw_updates`] to inspect and apply
+/// sparse routing rather than inferring it from successful execution.
 pub struct MemoryTransformerLm {
     pub config: MemoryTransformerConfig,
     token_embedding: Embedding,
@@ -1193,6 +1225,8 @@ pub struct MemoryTransformerLm {
 }
 
 impl MemoryTransformerLm {
+    /// Validates `config` and constructs a CPU model with deterministic RNG
+    /// consumption.
     pub fn new(config: MemoryTransformerConfig, rng: &mut HeirloomRng) -> Result<Self> {
         config.validate()?;
         let memory_layer_set = config.memory_layer_set();
@@ -1487,6 +1521,7 @@ impl MemoryTransformerLm {
         Ok(indices)
     }
 
+    /// Returns selected-row counts from the most recent memory forward pass.
     pub fn memory_selection_report(&self) -> Result<MemorySelectionReport> {
         let mut layers = Vec::new();
         let mut all_rows = Vec::new();
@@ -1565,6 +1600,7 @@ impl MemoryTransformerLm {
             .smft_mask_against(background, trainable_fraction, min_rows)
     }
 
+    /// Computes autoregressive cross-entropy through the standard autograd path.
     pub fn loss(&self, input: &Tensor, targets: &Tensor) -> Result<Tensor> {
         let logits = self.forward(input)?;
         let shape = logits.shape();

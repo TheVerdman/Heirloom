@@ -1,9 +1,9 @@
 #!/usr/bin/env zsh
 set -euo pipefail
 
-PROJECT_ID="${PROJECT_ID:-project-49b1b523-d248-434f-bd4}"
+: "${PROJECT_ID:?Set PROJECT_ID to the GCP project that will own the validation job}"
 REGION="${REGION:-us-central1}"
-BUCKET="${BUCKET:-gs://${PROJECT_ID}-vecl-qb-artifacts}"
+: "${BUCKET:?Set BUCKET to an existing gs:// artifact bucket}"
 JOB_TS="$(date +%Y%m%d-%H%M%S)"
 STREAM_LOGS="${STREAM_LOGS:-true}"
 VALIDATE_MODE="${HEIRLOOM_VERTEX_VALIDATE_MODE:-quick}"
@@ -76,6 +76,7 @@ tar -C "$REPO_ROOT" \
   --exclude "./target" \
   --exclude "./.git" \
   --exclude "./.venv" \
+  --exclude "./.venv-parity" \
   --exclude "./runs" \
   --exclude "./tmp" \
   --exclude "./.DS_Store" \
@@ -614,23 +615,13 @@ def main() -> int:
                     nccl_probe_report_uris.append(probe_report_uri)
 
         if run_cuda_storage_tests:
-            cuda_test_env = env.copy()
-            cuda_test_env["HEIRLOOM_CUDA_TESTS"] = "1"
             cuda_test_log = work_root / "cuda-storage-tests.txt"
             try:
                 run_to_file(
-                    [
-                        "cargo",
-                        "test",
-                        "--workspace",
-                        "--test",
-                        "cuda_storage",
-                        "--",
-                        "--nocapture",
-                    ],
+                    ["bash", "scripts/test_gpu.sh", "cuda"],
                     cuda_test_log,
                     cwd=source_dir,
-                    env=cuda_test_env,
+                    env=env,
                 )
             finally:
                 upload_diagnostic(cuda_test_log, "cuda-storage-tests.txt")

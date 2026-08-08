@@ -3,7 +3,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyModule};
 
-#[pyclass(name = "Tensor", unsendable)]
+#[pyclass(name = "Tensor", unsendable, skip_from_py_object)]
 #[derive(Clone)]
 struct PyTensor {
     inner: Tensor,

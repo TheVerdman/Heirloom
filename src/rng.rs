@@ -1,3 +1,4 @@
+use crate::shape::checked_numel;
 use crate::{Result, Tensor, TensorError};
 
 #[derive(Clone, Debug)]
@@ -69,7 +70,7 @@ impl HeirloomRng {
         high: f32,
         requires_grad: bool,
     ) -> Result<Tensor> {
-        let len = shape.iter().product::<usize>();
+        let len = checked_numel(shape)?;
         let mut data = Vec::with_capacity(len);
         for _ in 0..len {
             data.push(self.uniform_range(low, high)?);
@@ -89,7 +90,7 @@ impl HeirloomRng {
                 "normal_tensor requires non-negative stddev, got {stddev}"
             )));
         }
-        let len = shape.iter().product::<usize>();
+        let len = checked_numel(shape)?;
         let mut data = Vec::with_capacity(len);
         for _ in 0..len {
             data.push(mean + stddev * self.normal_f32());

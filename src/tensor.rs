@@ -1,10 +1,13 @@
+//! Tensor metadata, storage views, operations, and reverse-mode autograd entry
+//! points.
+
 use crate::dispatch::{self, BinaryOp, Operator, OperatorInfo, TensorMeta};
 use crate::extension::CustomUnaryOp;
 use crate::grad_mode::should_track_grad;
 use crate::shape::{
-    broadcast_flat_index, broadcast_shapes, checked_numel, contiguous_strides, flatten_index,
-    for_each_index, has_internal_overlap, is_contiguous, logical_offset, max_storage_offset,
-    normalize_dim, numel, validate_permutation,
+    broadcast_flat_index, broadcast_shapes, checked_max_storage_offset, checked_numel,
+    contiguous_strides, flatten_index, for_each_index, has_internal_overlap, is_contiguous,
+    logical_offset, normalize_dim, numel, validate_permutation,
 };
 use crate::storage::{bf16_bits_to_f32, f32_to_bf16_bits, DType, Device, Storage, StorageData};
 use crate::{Result, TensorError};
@@ -24,6 +27,14 @@ use autograd::{
 
 static NEXT_TENSOR_ID: AtomicUsize = AtomicUsize::new(1);
 
+/// A reference-counted n-dimensional array with explicit dtype, device, layout,
+/// and autograd metadata.
+///
+/// Cloning a tensor clones the handle, not its storage. View operations may
+/// share storage with different shapes, strides, and offsets. Mutating
+/// operations therefore perform alias/version checks, while shape and stride
+/// arithmetic is validated before dispatch. Floating-point tensors can opt
+/// into reverse-mode autograd with the constructor's `requires_grad` argument.
 #[derive(Clone)]
 pub struct Tensor {
     inner: Rc<RefCell<TensorInner>>,
@@ -65,23 +76,31 @@ struct GradTensor {
 }
 
 impl GradTensor {
-    fn zeros_for_layout(shape: &[usize], strides: &[usize], storage_offset: usize) -> Self {
+    fn zeros_for_layout(shape: &[usize], strides: &[usize], storage_offset: usize) -> Result<Self> {
         let storage_len = if numel(shape) == 0 {
             0
         } else {
-            max_storage_offset(shape, strides, storage_offset) + 1
+            checked_max_storage_offset(shape, strides, storage_offset)?
+                .checked_add(1)
+                .ok_or_else(|| {
+                    TensorError::Autograd("gradient storage length overflows usize".to_string())
+                })?
         };
-        Self {
+        Ok(Self {
             storage: Storage::new_f64(vec![0.0; storage_len]),
             shape: shape.to_vec(),
             strides: strides.to_vec(),
             storage_offset,
             dtype: DType::F64,
             device: Device::Cpu,
-        }
+        })
     }
 
-    fn zeros_for_tensor_layout(shape: &[usize], strides: &[usize], storage_offset: usize) -> Self {
+    fn zeros_for_tensor_layout(
+        shape: &[usize],
+        strides: &[usize],
+        storage_offset: usize,
+    ) -> Result<Self> {
         if has_internal_overlap(shape, strides) {
             Self::zeros_for_layout(shape, &contiguous_strides(shape), 0)
         } else {
@@ -734,6 +753,8 @@ impl Tensor {
         }
     }
 
+    /// Copies the logical tensor to `device`, preserving dtype and gradient
+    /// intent while materializing non-contiguous layouts as needed.
     pub fn to_device(&self, device: Device) -> Result<Self> {
         if self.device() == device {
             return Ok(self.clone());
@@ -1190,7 +1211,9 @@ impl Tensor {
                 "{role} expected rank-2 CUDA tensor, got {shape:?}"
             )));
         }
-        if numel(&shape) > 0 && max_storage_offset(&shape, &strides, offset) >= storage.len() {
+        if numel(&shape) > 0
+            && checked_max_storage_offset(&shape, &strides, offset)? >= storage.len()
+        {
             return Err(TensorError::Shape(format!(
                 "{role} layout shape={shape:?} strides={strides:?} offset={offset} exceeds storage length {}",
                 storage.len()
@@ -1739,7 +1762,7 @@ impl Tensor {
             Some(existing) => existing.add_logical(&grad)?,
             None => {
                 let grad_tensor =
-                    GradTensor::zeros_for_tensor_layout(&shape, &strides, storage_offset);
+                    GradTensor::zeros_for_tensor_layout(&shape, &strides, storage_offset)?;
                 grad_tensor.add_logical(&grad)?;
                 inner.grad = Some(grad_tensor);
             }
@@ -1822,6 +1845,12 @@ impl Tensor {
         Ok(())
     }
 
+    /// Runs reverse-mode autodiff from this scalar and accumulates leaf
+    /// gradients.
+    ///
+    /// The output must contain exactly one element and require gradients. The
+    /// graph is released after traversal; use [`Tensor::backward_retain_graph`]
+    /// only when a second traversal is intentional.
     pub fn backward(&self) -> Result<()> {
         if !self.requires_grad() {
             return Err(TensorError::Autograd(
@@ -2532,7 +2561,9 @@ impl Tensor {
             let inner = self.inner.borrow();
             (Rc::clone(&inner.storage), inner.dtype, inner.device)
         };
-        if numel(shape) > 0 && max_storage_offset(shape, strides, storage_offset) >= storage.len() {
+        if numel(shape) > 0
+            && checked_max_storage_offset(shape, strides, storage_offset)? >= storage.len()
+        {
             return Err(TensorError::Shape(format!(
                 "as_strided view shape {:?}, strides {:?}, offset {} exceeds storage length {}",
                 shape,
@@ -2569,18 +2600,29 @@ impl Tensor {
             )));
         }
 
-        let (storage, mut new_shape, strides, offset, dtype, device, requires_grad) = {
+        let (storage, mut new_shape, strides, base_offset, dtype, device, requires_grad) = {
             let inner = self.inner.borrow();
             (
                 Rc::clone(&inner.storage),
                 inner.shape.clone(),
                 inner.strides.clone(),
-                inner.storage_offset + start * inner.strides[dim],
+                inner.storage_offset,
                 inner.dtype,
                 inner.device,
                 should_track_grad(inner.requires_grad),
             )
         };
+        let offset_delta = start.checked_mul(strides[dim]).ok_or_else(|| {
+            TensorError::Shape(format!(
+                "narrow offset overflows for start {start} and stride {}",
+                strides[dim]
+            ))
+        })?;
+        let offset = base_offset.checked_add(offset_delta).ok_or_else(|| {
+            TensorError::Shape(format!(
+                "narrow storage offset overflows: base {base_offset}, delta {offset_delta}"
+            ))
+        })?;
         new_shape[dim] = len;
         let grad_fn = requires_grad.then(|| GradFn::Narrow {
             input: self.clone(),
@@ -2762,6 +2804,8 @@ impl Tensor {
         )
     }
 
+    /// Multiplies rank-2 tensors after validating shapes, layouts, devices, and
+    /// all matrix-size/stride conversions used by the selected kernel.
     pub fn matmul(&self, other: &Self) -> Result<Self> {
         if self.device() != Device::Cpu || other.device() != Device::Cpu {
             return self.cuda_matmul(other);
@@ -3577,9 +3621,15 @@ impl Tensor {
                 "memory_product_key_selected_scores expected indices [tokens, top_k], query [tokens, key_dim], and half-keys [side, half_dim], got indices={index_shape:?} query={query_shape:?} left={left_shape:?} right={right_shape:?}"
             )));
         }
+        let expected_key_dim = left_shape[1].checked_mul(2).ok_or_else(|| {
+            TensorError::Shape(format!(
+                "memory_product_key_selected_scores half-key dimension {} cannot be doubled",
+                left_shape[1]
+            ))
+        })?;
         if query_shape[0] != index_shape[0]
             || left_shape != right_shape
-            || query_shape[1] != left_shape[1] * 2
+            || query_shape[1] != expected_key_dim
         {
             return Err(TensorError::Shape(format!(
                 "memory_product_key_selected_scores expected matching tokens and key_dim=2*half_dim, got indices={index_shape:?} query={query_shape:?} left={left_shape:?} right={right_shape:?}"
@@ -3967,7 +4017,24 @@ impl Tensor {
         let query = self.data_f64();
         let key_data = key.data_f64();
         let value_data = value.data_f64();
-        let mut attention = vec![0.0; batch * n_heads * time * time];
+        let attention_len = batch
+            .checked_mul(n_heads)
+            .and_then(|value| value.checked_mul(time))
+            .and_then(|value| value.checked_mul(time))
+            .ok_or_else(|| {
+                TensorError::Shape(format!(
+                    "causal attention score size overflows: batch={batch}, heads={n_heads}, time={time}"
+                ))
+            })?;
+        let mut attention = Vec::new();
+        attention
+            .try_reserve_exact(attention_len)
+            .map_err(|error| {
+                TensorError::Shape(format!(
+                "causal attention score allocation for {attention_len} elements failed: {error}"
+            ))
+            })?;
+        attention.resize(attention_len, 0.0);
         let mut output = vec![0.0; self.numel()];
 
         for b in 0..batch {
@@ -5125,4 +5192,23 @@ fn storage_from_f64_values(data: Vec<f64>, dtype: DType) -> Rc<Storage> {
 
 fn cuda_error(error: heirloom_kernels::cuda::CudaError) -> TensorError {
     TensorError::Device(error.to_string())
+}
+
+#[cfg(test)]
+mod safety_tests {
+    use super::*;
+
+    #[test]
+    fn product_key_half_dimension_overflow_returns_shape_error() {
+        let indices = Tensor::from_i64(Vec::new(), &[0, 1], false).unwrap();
+        let query = Tensor::from_f32(Vec::new(), &[0, 0], false).unwrap();
+        let left = Tensor::from_f32(Vec::new(), &[0, usize::MAX], false).unwrap();
+        let right = Tensor::from_f32(Vec::new(), &[0, usize::MAX], false).unwrap();
+
+        let error = indices
+            .memory_product_key_selected_scores(&query, &left, &right)
+            .expect_err("overflowing doubled half-key dimension must be rejected");
+
+        assert!(error.to_string().contains("cannot be doubled"));
+    }
 }

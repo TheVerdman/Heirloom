@@ -87,6 +87,42 @@ fn as_strided_rejects_storage_out_of_bounds() {
 }
 
 #[test]
+fn as_strided_rejects_stride_and_offset_overflow() {
+    let base = Tensor::from_vec(vec![1.0], &[1], false).unwrap();
+
+    let stride_error = base
+        .as_strided(&[3], &[usize::MAX], 0)
+        .expect_err("overflowing stride span must be rejected");
+    assert!(stride_error.to_string().contains("layout span overflows"));
+
+    let offset_error = base
+        .as_strided(&[2], &[1], usize::MAX)
+        .expect_err("overflowing offset must be rejected");
+    assert!(offset_error.to_string().contains("layout offset overflows"));
+}
+
+#[test]
+fn zero_size_narrow_backward_is_well_defined() {
+    let base = Tensor::from_f32(Vec::new(), &[0, 3], true).unwrap();
+    let narrowed = base.narrow(1, 0, 2).unwrap();
+
+    narrowed.sum().unwrap().backward().unwrap();
+
+    assert_eq!(base.grad(), Some(Vec::new()));
+}
+
+#[test]
+fn causal_attention_rejects_overflowing_score_shape_before_allocation() {
+    let empty = Tensor::from_f32(Vec::new(), &[1, usize::MAX, 0], false).unwrap();
+
+    let error = empty
+        .causal_self_attention(&empty, &empty, 1)
+        .expect_err("overflowing attention score geometry must be rejected");
+
+    assert!(error.to_string().contains("score size overflows"));
+}
+
+#[test]
 fn transposed_leaf_view_gradient_preserves_non_overlapping_layout() {
     let base = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3], false).unwrap();
     let view = base.transpose().unwrap();

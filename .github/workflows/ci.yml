@@ -4,18 +4,86 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  validate:
+  rust:
     name: Rust validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: clippy,rustfmt
 
+      - name: Install validation tools
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck zsh
+
       - name: Run validation
         run: ./scripts/validate.sh
+
+  python-parity:
+    name: Python / PyTorch parity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Install locked Python toolchain
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: 0.11.28
+          python-version: 3.13.12
+          enable-cache: true
+
+      - name: Run parity tests
+        run: ./scripts/python_parity.sh
+
+      - name: Lint Python
+        run: .venv-parity/bin/ruff check python scripts tools
+
+  shell:
+    name: Shell lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
+      - name: Run ShellCheck
+        run: shellcheck scripts/check_toolchain.sh scripts/docker_validate.sh scripts/gpu_smoke.sh scripts/python_parity.sh scripts/test_cpu.sh scripts/test_gpu.sh scripts/validate.sh
+
+  audit:
+    name: Rust dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.2
+
+      - name: Audit Cargo.lock
+        run: cargo audit
+
+  docker:
+    name: Fresh Docker validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build and validate
+        run: ./scripts/docker_validate.sh heirloom:ci

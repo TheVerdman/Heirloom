@@ -1,4 +1,4 @@
-use crate::shape::{broadcast_flat_index, broadcast_shapes, for_each_index, numel};
+use crate::shape::{broadcast_flat_index, broadcast_shapes, checked_numel, for_each_index, numel};
 use crate::{DType, Device};
 use crate::{Result, TensorError};
 
@@ -599,19 +599,74 @@ fn matmul_cpu(
         )));
     }
 
-    let batch_count = numel(&batch_shape);
+    let batch_count = checked_numel(&batch_shape)?;
+    let left_matrix_len = m.checked_mul(k).ok_or_else(|| {
+        TensorError::Shape(format!("matmul left matrix size overflows: {m} * {k}"))
+    })?;
+    let right_matrix_len = k.checked_mul(n).ok_or_else(|| {
+        TensorError::Shape(format!("matmul right matrix size overflows: {k} * {n}"))
+    })?;
+    let output_matrix_len = m.checked_mul(n).ok_or_else(|| {
+        TensorError::Shape(format!("matmul output matrix size overflows: {m} * {n}"))
+    })?;
+    let output_len = batch_count.checked_mul(output_matrix_len).ok_or_else(|| {
+        TensorError::Shape(format!(
+            "matmul batched output size overflows: {batch_count} * {output_matrix_len}"
+        ))
+    })?;
     let mut left_batches = Vec::with_capacity(batch_count);
     let mut right_batches = Vec::with_capacity(batch_count);
+    let mut batch_indices = Vec::with_capacity(batch_count);
     for_each_index(&batch_shape, |batch_index| {
+        batch_indices.push(batch_index.to_vec());
+    });
+    for batch_index in &batch_indices {
         let left_batch = broadcast_flat_index(batch_index, &batch_shape, left_batch_shape);
         let right_batch = broadcast_flat_index(batch_index, &batch_shape, right_batch_shape);
-        let left_start = left_batch * m * k;
-        let right_start = right_batch * k * n;
-        left_batches.push(left_data[left_start..left_start + m * k].to_vec());
-        right_batches.push(right_data[right_start..right_start + k * n].to_vec());
-    });
-    let mut out = Vec::with_capacity(batch_count * m * n);
-    for batch in heirloom_kernels::batched_matmul_f64(&left_batches, &right_batches, m, k, n) {
+        let left_start = left_batch.checked_mul(left_matrix_len).ok_or_else(|| {
+            TensorError::Shape("matmul left batch offset overflows usize".to_string())
+        })?;
+        let right_start = right_batch.checked_mul(right_matrix_len).ok_or_else(|| {
+            TensorError::Shape("matmul right batch offset overflows usize".to_string())
+        })?;
+        let left_end = left_start.checked_add(left_matrix_len).ok_or_else(|| {
+            TensorError::Shape("matmul left batch range overflows usize".to_string())
+        })?;
+        let right_end = right_start.checked_add(right_matrix_len).ok_or_else(|| {
+            TensorError::Shape("matmul right batch range overflows usize".to_string())
+        })?;
+        left_batches.push(
+            left_data
+                .get(left_start..left_end)
+                .ok_or_else(|| {
+                    TensorError::Shape(format!(
+                        "matmul left batch range {left_start}..{left_end} exceeds data length {}",
+                        left_data.len()
+                    ))
+                })?
+                .to_vec(),
+        );
+        right_batches.push(
+            right_data
+                .get(right_start..right_end)
+                .ok_or_else(|| {
+                    TensorError::Shape(format!(
+                        "matmul right batch range {right_start}..{right_end} exceeds data length {}",
+                        right_data.len()
+                    ))
+                })?
+                .to_vec(),
+        );
+    }
+    let mut out = Vec::new();
+    out.try_reserve_exact(output_len).map_err(|error| {
+        TensorError::Shape(format!(
+            "matmul output allocation for {output_len} elements failed: {error}"
+        ))
+    })?;
+    let batches = heirloom_kernels::batched_matmul_f64(&left_batches, &right_batches, m, k, n)
+        .map_err(|error| TensorError::InvalidOperation(format!("CPU matmul failed: {error}")))?;
+    for batch in batches {
         out.extend(batch);
     }
 

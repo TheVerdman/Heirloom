@@ -2,8 +2,11 @@
 name = "heirloom-python"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.95"
 description = "Thin PyO3 bindings for Heirloom parity testing."
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/TheVerdman/Heirloom"
+publish = false
 
 [lib]
 name = "heirloom_py"
@@ -15,4 +18,4 @@ extension-module = ["pyo3/extension-module"]
 
 [dependencies]
 heirloom = { path = ".." }
-pyo3 = { version = "0.27", default-features = false, features = ["macros"] }
+pyo3 = { version = "0.29", default-features = false, features = ["macros"] }

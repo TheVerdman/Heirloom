@@ -21,17 +21,9 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
-
-DEFAULT_GCS_PREFIX = (
-    "gs://project-49b1b523-d248-434f-bd4-vecl-qb-artifacts/"
-    "heirloom/qb-native-pretraining-v1/source-slices"
-)
-DEFAULT_QB_CORPUS = (
-    "/Users/andrewverdiramo/Desktop/VECL-QB/data/synthetic/v1-hard/corpus.jsonl"
-)
-DEFAULT_QB_METADATA = (
-    "/Users/andrewverdiramo/Desktop/VECL-QB/data/synthetic/v1-hard/metadata.json"
-)
+DEFAULT_GCS_PREFIX = os.environ.get("HEIRLOOM_QB_SOURCE_SLICE_GCS_PREFIX", "")
+DEFAULT_QB_CORPUS = os.environ.get("HEIRLOOM_QB_CORPUS_PATH")
+DEFAULT_QB_METADATA = os.environ.get("HEIRLOOM_QB_METADATA_PATH")
 APPROVED_LICENSE_STATUSES = {
     "approved",
     "source_terms_verified",
@@ -131,12 +123,11 @@ GOVERNANCE_EVIDENCE: dict[str, dict[str, Any]] = {
     },
     "vecl_qb.synthetic.v1-hard": {
         "review_status": "approved_internal_synthetic",
-        "primary_urls": [
-            "file:///Users/andrewverdiramo/Desktop/VECL-QB/data/synthetic/v1-hard/metadata.json",
-        ],
+        "primary_urls": [],
         "evidence_summary": (
             "Project-internal synthetic VECL-QB corpus with no production user "
-            "data, local metadata, record counts, validation fields, and hashes."
+            "data. The caller must supply local metadata, record counts, "
+            "validation fields, and hashes."
         ),
         "required_before_upload": [],
     },
@@ -218,7 +209,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gcs-prefix",
         default=DEFAULT_GCS_PREFIX,
-        help="Destination GCS prefix for source-slice objects.",
+        help=(
+            "Destination GCS prefix for source-slice objects. May also be set "
+            "with HEIRLOOM_QB_SOURCE_SLICE_GCS_PREFIX; required with --upload."
+        ),
     )
     parser.add_argument(
         "--out-dir",
@@ -411,7 +405,9 @@ def source_entry(
         reject_compressed(metadata_path, spec.source_id)
     file_entries = []
     for source_file in source_files:
-        file_destination = gcs_join(gcs_prefix, spec.slug, source_file.name)
+        file_destination = (
+            gcs_join(gcs_prefix, spec.slug, source_file.name) if gcs_prefix else None
+        )
         file_entry = {
             "local_path": str(source_file),
             "gcs_uri": file_destination,
@@ -423,17 +419,21 @@ def source_entry(
     byte_count = sum(int(entry["bytes"]) for entry in file_entries)
     record_count = sum(int(entry["records"]) for entry in file_entries)
     content_hash = file_entries[0]["sha256"] if len(file_entries) == 1 else source_set_hash(source_files)
-    destination = (
-        gcs_join(gcs_prefix, spec.slug, source_files[0].name)
-        if len(source_files) == 1
-        else gcs_join(gcs_prefix, spec.slug)
-    )
+    destination = None
+    if gcs_prefix:
+        destination = (
+            gcs_join(gcs_prefix, spec.slug, source_files[0].name)
+            if len(source_files) == 1
+            else gcs_join(gcs_prefix, spec.slug)
+        )
     metadata_destination = None
     metadata_hash = None
     metadata_summary = None
     if metadata_path and metadata_path.exists():
         metadata_hash = sha256_file(metadata_path)
-        metadata_destination = gcs_join(gcs_prefix, spec.slug, metadata_path.name)
+        metadata_destination = (
+            gcs_join(gcs_prefix, spec.slug, metadata_path.name) if gcs_prefix else None
+        )
         metadata_summary = read_metadata_summary(metadata_path)
     if upload:
         for source_file in source_files:
@@ -470,6 +470,11 @@ def source_entry(
 
 def main() -> int:
     args = parse_args()
+    if args.upload and not args.gcs_prefix:
+        raise SystemExit(
+            "--gcs-prefix (or HEIRLOOM_QB_SOURCE_SLICE_GCS_PREFIX) is required "
+            "with --upload"
+        )
     out_dir = pathlib.Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     entries: list[dict[str, Any]] = []

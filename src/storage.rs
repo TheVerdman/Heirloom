@@ -1,8 +1,15 @@
+//! Internal storage ownership plus the public dtype and device vocabulary.
+
 use crate::{amp, Result, TensorError};
 use heirloom_kernels::cuda::CudaBuffer;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+/// Scalar representation carried by a tensor's storage.
+///
+/// Autograd is restricted to floating-point variants. `BFloat16` stores IEEE
+/// bfloat16 bits; accumulation policies are operation-specific and exposed by
+/// the AMP/runtime reports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DType {
     F32,
@@ -237,6 +244,10 @@ impl StorageData {
     }
 }
 
+/// Physical execution and storage location.
+///
+/// `Cuda(n)` names a zero-based CUDA device ordinal. Transfers are explicit
+/// and fallible; this boundary does not silently fall back to CPU.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Device {
     Cpu,

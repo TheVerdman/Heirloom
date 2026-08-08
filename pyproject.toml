@@ -1,14 +1,42 @@
 [build-system]
-requires = ["maturin>=1.13,<2.0"]
+requires = ["maturin==1.13.3"]
 build-backend = "maturin"
 
 [project]
 name = "heirloom-py"
 version = "0.1.0"
 description = "Thin Python bindings for Heirloom parity testing."
-requires-python = ">=3.10"
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[dependency-groups]
+parity = [
+    "maturin==1.13.3",
+    "numpy==2.4.6",
+    "pytest==9.0.3",
+    "ruff==0.16.0",
+    "torch==2.12.0",
+]
 
 [tool.maturin]
 manifest-path = "heirloom-python/Cargo.toml"
 module-name = "heirloom_py"
 features = ["extension-module"]
+
+[tool.uv]
+required-version = "==0.11.28"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

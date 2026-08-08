@@ -1192,6 +1192,18 @@ struct BpeTrainerStats {
     max_heap_len: usize,
 }
 
+struct BpeTrainerProgress<'a> {
+    stage: &'a str,
+    vocab_size: usize,
+    target_vocab_size: usize,
+    merges: usize,
+    pair_count: usize,
+    heap_len: usize,
+    stats: &'a BpeTrainerStats,
+    selected_pair_count: Option<u64>,
+    elapsed: Duration,
+}
+
 impl Ord for PairCandidate {
     fn cmp(&self, other: &Self) -> Ordering {
         self.count
@@ -1254,17 +1266,17 @@ fn train_bpe_merges_incremental(
         max_heap_len: heap.len(),
         ..BpeTrainerStats::default()
     };
-    log_bpe_trainer_progress(
-        "start",
-        id_to_bytes.len(),
-        vocab_size,
-        0,
-        pair_counts.len(),
-        heap.len(),
-        &stats,
-        None,
-        Duration::ZERO,
-    );
+    log_bpe_trainer_progress(BpeTrainerProgress {
+        stage: "start",
+        vocab_size: id_to_bytes.len(),
+        target_vocab_size: vocab_size,
+        merges: 0,
+        pair_count: pair_counts.len(),
+        heap_len: heap.len(),
+        stats: &stats,
+        selected_pair_count: None,
+        elapsed: Duration::ZERO,
+    });
 
     let progress_start = Instant::now();
     let mut last_progress_merge_count = 0usize;
@@ -1346,32 +1358,32 @@ fn train_bpe_merges_incremental(
         ) {
             last_progress_merge_count = merges.len();
             last_progress_elapsed = progress_start.elapsed();
-            log_bpe_trainer_progress(
-                "progress",
-                id_to_bytes.len(),
-                vocab_size,
-                merges.len(),
-                pair_counts.len(),
-                heap.len(),
-                &stats,
-                Some(candidate.count),
-                last_progress_elapsed,
-            );
+            log_bpe_trainer_progress(BpeTrainerProgress {
+                stage: "progress",
+                vocab_size: id_to_bytes.len(),
+                target_vocab_size: vocab_size,
+                merges: merges.len(),
+                pair_count: pair_counts.len(),
+                heap_len: heap.len(),
+                stats: &stats,
+                selected_pair_count: Some(candidate.count),
+                elapsed: last_progress_elapsed,
+            });
         }
     }
 
     stats.final_pair_count = pair_counts.len();
-    log_bpe_trainer_progress(
-        "done",
-        id_to_bytes.len(),
-        vocab_size,
-        merges.len(),
-        pair_counts.len(),
-        heap.len(),
-        &stats,
-        None,
-        progress_start.elapsed(),
-    );
+    log_bpe_trainer_progress(BpeTrainerProgress {
+        stage: "done",
+        vocab_size: id_to_bytes.len(),
+        target_vocab_size: vocab_size,
+        merges: merges.len(),
+        pair_count: pair_counts.len(),
+        heap_len: heap.len(),
+        stats: &stats,
+        selected_pair_count: None,
+        elapsed: progress_start.elapsed(),
+    });
     Ok((id_to_bytes, merges, stats))
 }
 
@@ -1397,33 +1409,23 @@ fn should_log_bpe_trainer_progress(
         .is_some_and(|delta| delta >= Duration::from_secs(60))
 }
 
-fn log_bpe_trainer_progress(
-    stage: &str,
-    vocab_size: usize,
-    target_vocab_size: usize,
-    merges: usize,
-    pair_count: usize,
-    heap_len: usize,
-    stats: &BpeTrainerStats,
-    selected_pair_count: Option<u64>,
-    elapsed: Duration,
-) {
+fn log_bpe_trainer_progress(progress: BpeTrainerProgress<'_>) {
     eprintln!(
         "[tokenizer-train] stage={} vocab={}/{} merges={} pair_count={} heap_len={} heap_pops={} stale_heap_pops={} heap_rebuilds={} affected_word_updates={} selected_pair_count={} elapsed_secs={:.1}",
-        stage,
-        vocab_size,
-        target_vocab_size,
-        merges,
-        pair_count,
-        heap_len,
-        stats.heap_pops,
-        stats.stale_heap_pops,
-        stats.heap_rebuilds,
-        stats.affected_word_updates,
-        selected_pair_count
+        progress.stage,
+        progress.vocab_size,
+        progress.target_vocab_size,
+        progress.merges,
+        progress.pair_count,
+        progress.heap_len,
+        progress.stats.heap_pops,
+        progress.stats.stale_heap_pops,
+        progress.stats.heap_rebuilds,
+        progress.stats.affected_word_updates,
+        progress.selected_pair_count
             .map(|value| value.to_string())
             .unwrap_or_else(|| "n/a".to_string()),
-        elapsed.as_secs_f64(),
+        progress.elapsed.as_secs_f64(),
     );
 }
 

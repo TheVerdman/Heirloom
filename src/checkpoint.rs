@@ -1,3 +1,10 @@
+//! Directory checkpoints for the reference dense and memory language models.
+//!
+//! A checkpoint keeps model state, optimizer state, tokenizer, model-family
+//! metadata, training step, and deterministic dataset cursor together. Loaders
+//! validate the recorded family before constructing a model and can restore it
+//! directly to a requested device.
+
 use crate::data::TokenDatasetState;
 use crate::memory_transformer::{MemoryTransformerConfig, MemoryTransformerLm};
 use crate::nn::{
@@ -11,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+/// Model family recorded in checkpoint metadata to prevent cross-family loads.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum LmModelFamily {
@@ -25,6 +33,7 @@ struct CheckpointFamilyProbe {
     model_family: LmModelFamily,
 }
 
+/// Serializable dense-language-model checkpoint metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LmCheckpointMetadata {
     #[serde(default)]
@@ -48,6 +57,7 @@ impl LmCheckpointMetadata {
     }
 }
 
+/// Serializable memory-transformer checkpoint metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MemoryLmCheckpointMetadata {
     pub model_family: LmModelFamily,
@@ -70,6 +80,7 @@ impl MemoryLmCheckpointMetadata {
     }
 }
 
+/// Fully restored dense model, optimizer, tokenizer, and metadata.
 pub struct LoadedLmCheckpoint {
     pub model: TinyTransformerLm,
     pub optimizer: AdamW,
@@ -77,6 +88,7 @@ pub struct LoadedLmCheckpoint {
     pub metadata: LmCheckpointMetadata,
 }
 
+/// Fully restored memory model, optimizer, tokenizer, and metadata.
 pub struct LoadedMemoryLmCheckpoint {
     pub model: MemoryTransformerLm,
     pub optimizer: AdamW,
@@ -84,6 +96,7 @@ pub struct LoadedMemoryLmCheckpoint {
     pub metadata: MemoryLmCheckpointMetadata,
 }
 
+/// Saves a dense-model checkpoint with a legacy RNG-only dataset cursor.
 pub fn save_lm_checkpoint(
     dir: impl AsRef<Path>,
     model: &TinyTransformerLm,
@@ -104,6 +117,10 @@ pub fn save_lm_checkpoint(
     )
 }
 
+/// Atomically writes the logical parts of a dense training checkpoint.
+///
+/// Individual files are validated on load; callers should write to a new
+/// directory or otherwise arrange external directory-level atomicity.
 pub fn save_lm_checkpoint_with_dataset_state(
     dir: impl AsRef<Path>,
     model: &TinyTransformerLm,
@@ -132,6 +149,7 @@ pub fn save_lm_checkpoint_with_dataset_state(
     write_json(dir.join("optimizer.json"), &optimizer.try_state()?)
 }
 
+/// Saves a memory-transformer checkpoint at the optimizer's current step.
 pub fn save_memory_lm_checkpoint_with_dataset_state(
     dir: impl AsRef<Path>,
     model: &MemoryTransformerLm,
@@ -151,6 +169,7 @@ pub fn save_memory_lm_checkpoint_with_dataset_state(
     )
 }
 
+/// Saves a memory-transformer checkpoint with an explicit reported step.
 pub fn save_memory_lm_checkpoint_with_dataset_state_and_step(
     dir: impl AsRef<Path>,
     model: &MemoryTransformerLm,
@@ -180,10 +199,13 @@ pub fn save_memory_lm_checkpoint_with_dataset_state_and_step(
     write_json(dir.join("optimizer.json"), &optimizer.try_state()?)
 }
 
+/// Loads a dense checkpoint onto CPU.
 pub fn load_lm_checkpoint(dir: impl AsRef<Path>) -> Result<LoadedLmCheckpoint> {
     load_lm_checkpoint_on_device(dir, Device::Cpu)
 }
 
+/// Loads and validates a dense checkpoint, then moves model parameters to
+/// `device` while rebuilding optimizer handles for those parameters.
 pub fn load_lm_checkpoint_on_device(
     dir: impl AsRef<Path>,
     device: Device,
@@ -207,6 +229,7 @@ pub fn load_lm_checkpoint_on_device(
     })
 }
 
+/// Loads and validates a memory-transformer checkpoint on `device`.
 pub fn load_memory_lm_checkpoint_on_device(
     dir: impl AsRef<Path>,
     device: Device,

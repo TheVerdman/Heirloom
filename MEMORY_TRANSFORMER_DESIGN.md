@@ -1,8 +1,8 @@
 # Memory Transformer Design
 
-Status: first hard-path design and CPU implementation plan.
-
-Branch/worktree note: this Codex workspace is not a Git checkout; no `.git` directory exists under `/Users/andrewverdiramo/Desktop/Heirloom`. A true branch or Git worktree cannot be created from the current state. Changes in this pass are kept additive and isolated to new memory-transformer files where possible.
+Status: implemented research prototype; see the main README and `HARD_MODE.md`
+for current validation evidence and limitations. Historical workspace notes live under
+`docs/history/`.
 
 ## Source Summary
 

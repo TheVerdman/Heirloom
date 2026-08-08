@@ -1,7 +1,16 @@
+//! Private autograd graph nodes and backward formulas.
+//!
+//! Each operation saves only the tensors or metadata required by its
+//! derivative. Saved tensor versions are checked during backward so an
+//! in-place mutation cannot silently invalidate a formula. Kernel-facing shape
+//! arithmetic is checked before offsets or lengths reach CPU/CUDA code.
+
 use super::Tensor;
 use crate::dispatch::BinaryOp;
 use crate::extension::CustomUnaryOp;
-use crate::shape::{broadcast_flat_index, broadcast_shapes, flatten_index, for_each_index, numel};
+use crate::shape::{
+    broadcast_flat_index, broadcast_shapes, checked_numel, flatten_index, for_each_index, numel,
+};
 use crate::{DType, Device, Result, TensorError};
 use heirloom_kernels::cuda::{
     CudaBuffer, MemoryProductKeySelectedScoreDims, MemorySelectedScoreDims, MemoryWeightedValueDims,
@@ -620,7 +629,12 @@ fn backward_matmul_cuda_f32(
             left_shape, right_shape
         )));
     }
-    if grad_output.len() != m * n {
+    let output_len = m.checked_mul(n).ok_or_else(|| {
+        TensorError::Autograd(format!(
+            "CUDA matmul backward output shape overflows: {m} * {n}"
+        ))
+    })?;
+    if grad_output.len() != output_len {
         return Err(TensorError::Autograd(format!(
             "CUDA matmul backward grad_output length {} does not match output shape [{m}, {n}]",
             grad_output.len()
@@ -717,7 +731,12 @@ fn backward_matmul_bias_cuda_f32(
             bias_tensor.shape()
         )));
     }
-    if grad_output.len() != m * n {
+    let output_len = m.checked_mul(n).ok_or_else(|| {
+        TensorError::Autograd(format!(
+            "CUDA fused matmul+bias backward output shape overflows: {m} * {n}"
+        ))
+    })?;
+    if grad_output.len() != output_len {
         return Err(TensorError::Autograd(format!(
             "CUDA fused matmul+bias backward grad_output length {} does not match output shape [{m}, {n}]",
             grad_output.len()
@@ -2007,19 +2026,55 @@ fn backward_matmul(
         left_shape[left_shape.len() - 1],
     );
     let n = right_shape[right_shape.len() - 1];
+    let left_matrix_len = m.checked_mul(k).ok_or_else(|| {
+        TensorError::Autograd(format!(
+            "matmul backward left matrix size overflows: {m} * {k}"
+        ))
+    })?;
+    let right_matrix_len = k.checked_mul(n).ok_or_else(|| {
+        TensorError::Autograd(format!(
+            "matmul backward right matrix size overflows: {k} * {n}"
+        ))
+    })?;
+    let output_matrix_len = m.checked_mul(n).ok_or_else(|| {
+        TensorError::Autograd(format!(
+            "matmul backward output matrix size overflows: {m} * {n}"
+        ))
+    })?;
     let left_data = left.data_f64();
     let right_data = right.data_f64();
     let mut grad_left = left.requires_grad().then(|| vec![0.0; left.numel()]);
     let mut grad_right = right.requires_grad().then(|| vec![0.0; right.numel()]);
     let mut grads = Vec::new();
 
-    let mut output_batch = 0;
+    let batch_count = checked_numel(&batch_shape).map_err(|error| {
+        TensorError::Autograd(format!("matmul backward batch shape is invalid: {error}"))
+    })?;
+    let expected_grad_len = batch_count.checked_mul(output_matrix_len).ok_or_else(|| {
+        TensorError::Autograd("matmul backward batched output size overflows usize".to_string())
+    })?;
+    if grad_output.len() != expected_grad_len {
+        return Err(TensorError::Autograd(format!(
+            "matmul backward gradient length {} does not match expected {expected_grad_len}",
+            grad_output.len()
+        )));
+    }
+    let mut batch_indices = Vec::with_capacity(batch_count);
     for_each_index(&batch_shape, |batch_index| {
+        batch_indices.push(batch_index.to_vec());
+    });
+    for (output_batch, batch_index) in batch_indices.iter().enumerate() {
         let left_batch = broadcast_flat_index(batch_index, &batch_shape, left_batch_shape);
         let right_batch = broadcast_flat_index(batch_index, &batch_shape, right_batch_shape);
-        let left_base = left_batch * m * k;
-        let right_base = right_batch * k * n;
-        let output_base = output_batch * m * n;
+        let left_base = left_batch.checked_mul(left_matrix_len).ok_or_else(|| {
+            TensorError::Autograd("matmul backward left batch offset overflows usize".to_string())
+        })?;
+        let right_base = right_batch.checked_mul(right_matrix_len).ok_or_else(|| {
+            TensorError::Autograd("matmul backward right batch offset overflows usize".to_string())
+        })?;
+        let output_base = output_batch.checked_mul(output_matrix_len).ok_or_else(|| {
+            TensorError::Autograd("matmul backward output batch offset overflows usize".to_string())
+        })?;
 
         for row in 0..m {
             for shared in 0..k {
@@ -2036,8 +2091,7 @@ fn backward_matmul(
                 }
             }
         }
-        output_batch += 1;
-    });
+    }
 
     if let Some(grad_left) = grad_left {
         grads.push((left.clone(), grad_left));
@@ -2738,7 +2792,18 @@ fn backward_narrow(
     }
     let input_shape = input.shape();
     let mut output_shape = input_shape.clone();
-    output_shape[dim] = grad_output.len() / input_shape_without_dim_numel(&input_shape, dim);
+    let outer_numel = input_shape_without_dim_numel(&input_shape, dim)?;
+    output_shape[dim] = if outer_numel == 0 {
+        0
+    } else {
+        if !grad_output.len().is_multiple_of(outer_numel) {
+            return Err(TensorError::Autograd(format!(
+                "narrow backward gradient length {} is not divisible by outer element count {outer_numel}",
+                grad_output.len()
+            )));
+        }
+        grad_output.len() / outer_numel
+    };
     let mut grad_input = vec![0.0; input.numel()];
     let mut output_flat = 0;
 
@@ -2751,12 +2816,15 @@ fn backward_narrow(
     Ok(vec![(input.clone(), grad_input)])
 }
 
-fn input_shape_without_dim_numel(shape: &[usize], dim: usize) -> usize {
-    shape
+fn input_shape_without_dim_numel(shape: &[usize], dim: usize) -> Result<usize> {
+    let reduced_shape = shape
         .iter()
         .enumerate()
         .filter_map(|(index, size)| (index != dim).then_some(*size))
-        .product()
+        .collect::<Vec<_>>();
+    checked_numel(&reduced_shape).map_err(|error| {
+        TensorError::Autograd(format!("narrow backward outer shape is invalid: {error}"))
+    })
 }
 
 pub(super) fn reduced_shape(input_shape: &[usize], dim: usize, keepdim: bool) -> Vec<usize> {

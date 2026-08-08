@@ -457,8 +457,7 @@ fn looks_like_email(token: &str) -> bool {
 
 fn looks_like_phone(token: &str) -> bool {
     let digits = token.chars().filter(|ch| ch.is_ascii_digit()).count();
-    digits >= 10
-        && digits <= 16
+    (10..=16).contains(&digits)
         && token
             .chars()
             .all(|ch| ch.is_ascii_digit() || matches!(ch, '+' | '-' | '(' | ')' | '.'))

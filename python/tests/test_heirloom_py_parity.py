@@ -1,11 +1,10 @@
 import math
 
+import heirloom_py as h
 import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
-
-import heirloom_py as h
 
 
 def as_numpy(tensor):
