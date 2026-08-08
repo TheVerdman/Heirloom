@@ -1187,7 +1187,9 @@ After a run, document:
 - diagnostic log URIs from `summary.json`, especially `cuda-storage-tests.txt`, fixture `run.log`, and TinyStories `run.log` when a gate fails
 - non-secret pass/fail summary, including CUDA device names and max absolute errors
 
-## 2026-08-08 committee-readiness validation attempt
+## 2026-08-08 committee-readiness validation record
+
+### Attempt 1: invalid one-device multi-rank probe
 
 Vertex job `2925376863247269888` packaged source revision
 `24beb90559601434e904868e7b6a86bdfda74422` and terminated without retry. CUDA
@@ -1204,6 +1206,45 @@ accelerators before uploading or submitting a job. The failed attempt is not
 current-commit GPU validation evidence; its retained failure summary lives
 under `heirloom/reference-runs/heirloom-validate-quick-20260808-174311/` in the
 private artifact bucket.
+
+### Attempt 2: stale product-key counter contract
+
+Vertex job `4646877820809641984` packaged source revision
+`76cb5be78a5f8ea65f9f539454d00b4397d2e2f6` and terminated without retry.
+CUDA discovery, topology, smoke, the BF16 Tensor Core probe, and the advertised
+single-rank NCCL all-reduce passed. The 46-test CUDA tensor/storage suite also
+passed. The memory-transformer suite then reported 13 passed and 1 failed:
+`cuda_memory_transformer_product_key_lookup_runs_on_device` produced both
+half-key gradients on `cuda:0`, but asserted the dense-key-only
+`selected_key_backward_calls` counter.
+
+The failure was retained rather than relabeled. Commit `c394c4f` added
+product-key-specific selected-score forward, query-backward, and
+half-key-backward counters to the runtime reports. It also strengthened the
+primitive CUDA test from length checks to exact forward and backward value
+checks. The failed job's artifacts live under
+`heirloom/reference-runs/heirloom-validate-quick-20260808-175208/` in the
+private bucket.
+
+### Successful exact-revision run
+
+Vertex job `4261257102716043264` packaged source revision
+`74307a195a9bba0ad53117efd160df77801445da`, started at
+`2026-08-08T22:12:24Z`, ended at `2026-08-08T22:17:26Z`, and reached
+`JOB_STATE_SUCCEEDED` without retry or error. It used one
+`NVIDIA A100-SXM4-80GB` on `a2-ultragpu-1g`, driver `535.309.01`, reported CUDA
+compatibility `12.2`, NCCL `2.21.5+cuda12.4`, and repository-selected Rust and
+Cargo `1.95.0`.
+
+The run passed CUDA add/ReLU smoke with zero error, the BF16 Tensor Core probe
+with zero error, 1/1 single-rank NCCL all-reduce test, 61/61 CUDA integration
+tests, both requested Tensor Core microbench sections, and the worker's
+format/test/Clippy quick gate. The formerly failing product-key model test and
+the new exact-gradient primitive test both passed. The successful summary and
+diagnostics live under
+`heirloom/reference-runs/heirloom-validate-quick-20260808-180847/` in the
+private bucket. Public, sanitized measurements and artifact hashes are in
+`docs/evidence/gpu-validation.md`.
 
 ## Boundaries
 

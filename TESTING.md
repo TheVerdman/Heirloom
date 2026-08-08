@@ -34,7 +34,7 @@ Python lint is:
 
 These commands run only explicitly ignored hardware tests. CUDA tests require a working CUDA Driver API; BF16 tests additionally require BF16 Tensor Core support. NCCL tests require a loadable NCCL library. Missing requirements fail the dedicated run rather than being counted as success.
 
-No CUDA or NCCL command is part of the CPU gate. See `docs/evidence/gpu-validation.md` for the limits of retained historical hardware evidence.
+No CUDA or NCCL command is part of the CPU gate. The August 8, 2026 single-A100 run executed both commands against source revision `74307a195a9bba0ad53117efd160df77801445da`; see `docs/evidence/gpu-validation.md` for exact results and for the limits of the separately labeled historical multi-GPU evidence.
 
 ## Documentation, security, and containers
 

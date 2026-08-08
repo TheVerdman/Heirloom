@@ -2,7 +2,7 @@
 
 Heirloom is a correctness-first Rust ML-systems portfolio project that follows one path end to end: tensor/autograd runtime → CUDA kernels → memory transformer.
 
-The repository is intentionally narrower than PyTorch and more candid than a production framework. It demonstrates the contracts that become difficult at the boundary between tensor views, reverse-mode autograd, device dispatch, unsafe kernels, optimizers, checkpointing, and a memory-augmented transformer. It does not claim framework parity, production training performance, or current-commit GPU validation.
+The repository is intentionally narrower than PyTorch and more candid than a production framework. It demonstrates the contracts that become difficult at the boundary between tensor views, reverse-mode autograd, device dispatch, unsafe kernels, optimizers, checkpointing, and a memory-augmented transformer. It does not claim framework parity, production training performance, or broad hardware portability.
 
 ## Architecture
 
@@ -69,14 +69,14 @@ Docker provides the cleanest local approximation of a fresh clone:
 | NCCL integration | `./scripts/test_gpu.sh nccl` | Runs the explicitly ignored NCCL test and fails if CUDA/NCCL is unavailable. |
 | Dependency audit | `cargo audit` | Checks `Cargo.lock` against RustSec; the CI gate rejects vulnerability advisories. |
 
-No compatible NVIDIA GPU was available during the August 2026 cleanup. The current commit therefore has CPU and Python evidence but no fresh GPU execution claim. A concise, versioned summary of a retained June 2026 4 × A100 run is in [GPU validation evidence](docs/evidence/gpu-validation.md); it is explicitly historical and does not substitute for rerunning the current commit.
+The August 8, 2026 validation passed on one A100-SXM4-80GB against source revision `74307a195a9bba0ad53117efd160df77801445da`: 61 CUDA tests, one single-rank NCCL all-reduce test, CUDA/Tensor Core smoke checks, both existing microbench sections, and the worker's CPU/Clippy quick gate all passed. The evidence-publication commit changes documentation only. Exact commands, versions, measurements, hashes, and the separately labeled historical 4 × A100 evidence are in [GPU validation evidence](docs/evidence/gpu-validation.md).
 
 ## Current scope and limitations
 
 - This is a focused prototype, not PyTorch parity. Operator, dtype, device, broadcasting, serialization, and distributed surfaces are deliberately incomplete.
 - CPU kernels favor legible correctness over allocation-free performance. Some strided operations materialize contiguous data.
 - CUDA coverage is opt-in and hardware-specific. Several Tensor Core and flash-attention routes remain guarded experiments; unsupported paths return errors rather than silently staging through CPU.
-- Historical GPU evidence is same-node A100 evidence. It does not prove current-commit behavior, multi-node scaling, tuned throughput, production reliability, or model quality.
+- Current-code GPU evidence is a single-device A100 run; its NCCL result is rank 0 of 1. The retained 4 × A100 evidence is from an older source snapshot. Together they do not prove current-revision multi-GPU behavior, multi-node scaling, tuned end-to-end training throughput, production reliability, or model quality.
 - The memory transformer is a systems integration target with bounded training checks, not a claim of state-of-the-art language-model results.
 - `heirloom_py` exists for parity testing and is not maintained as a general Python package.
 - Experimental corpus, cloud, Padawan, and skill/compiler tracks remain in the repository for provenance but are outside the primary review path.

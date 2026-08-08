@@ -1,5 +1,5 @@
 //! Neural-network modules, generation helpers, and optimizers built on
-//! [`Tensor`](crate::Tensor).
+//! [`Tensor`].
 
 use crate::amp::{self, AmpBf16OpDecision, AmpBf16Policy};
 use crate::rng::HeirloomRng;
