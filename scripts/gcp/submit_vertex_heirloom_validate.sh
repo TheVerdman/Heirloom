@@ -239,7 +239,27 @@ def upload_directory_gcs(source_dir: pathlib.Path, uri_prefix: str) -> list[str]
     return uploaded
 
 
-def ensure_rust_toolchain(env: dict[str, str]) -> None:
+def command_output(
+    command: list[str], *, cwd: pathlib.Path, env: dict[str, str]
+) -> str:
+    print("\n==> " + " ".join(command), flush=True)
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    output = result.stdout.strip()
+    print(output, flush=True)
+    return output
+
+
+def ensure_rust_toolchain(
+    env: dict[str, str], source_dir: pathlib.Path
+) -> dict[str, str]:
     cargo = shutil.which("cargo", path=env["PATH"])
     if cargo is None:
         run(
@@ -254,9 +274,15 @@ def ensure_rust_toolchain(env: dict[str, str]) -> None:
     cargo_home = pathlib.Path.home() / ".cargo" / "bin"
     env["PATH"] = f"{cargo_home}:{env['PATH']}"
     if shutil.which("rustup", path=env["PATH"]):
-        run(["rustup", "component", "add", "rustfmt", "clippy"], env=env)
-    run(["cargo", "--version"], env=env)
-    run(["rustc", "--version"], env=env)
+        run(
+            ["rustup", "component", "add", "rustfmt", "clippy"],
+            cwd=source_dir,
+            env=env,
+        )
+    return {
+        "cargo": command_output(["cargo", "--version"], cwd=source_dir, env=env),
+        "rustc": command_output(["rustc", "--version"], cwd=source_dir, env=env),
+    }
 
 
 def main() -> int:
@@ -362,7 +388,12 @@ def main() -> int:
     env = child_env(os.environ.copy())
     env["PATH"] = f"{pathlib.Path.home() / '.cargo' / 'bin'}:{env.get('PATH', '')}"
     env.setdefault("RUST_BACKTRACE", "1")
-    ensure_rust_toolchain(env)
+    rust_toolchain = ensure_rust_toolchain(env, source_dir)
+    rust_toolchain_path = work_root / "rust-toolchain.json"
+    rust_toolchain_path.write_text(
+        json.dumps(rust_toolchain, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     gpu_report_uris: list[str] = []
     gpu_log_uris: list[str] = []
@@ -420,6 +451,10 @@ def main() -> int:
     def write_worker_json(path: pathlib.Path, value: object) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+    rust_toolchain_report_uri = upload_diagnostic(
+        rust_toolchain_path, "rust-toolchain.json"
+    )
 
     if require_gpu:
         if collect_gpu_topology:
@@ -1899,6 +1934,8 @@ def main() -> int:
         "source_revision": source_revision,
         "source_uri": source_uri,
         "artifact_prefix": artifact_prefix,
+        "rust_toolchain": rust_toolchain,
+        "rust_toolchain_report_uri": rust_toolchain_report_uri,
         "quick_clippy": quick_clippy_status,
         "gpu_smoke_report_uris": gpu_report_uris,
         "gpu_log_uris": gpu_log_uris,
