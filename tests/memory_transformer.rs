@@ -1088,7 +1088,11 @@ fn cuda_product_key_half_table_primitives_match_cpu_reference() -> Result<()> {
         .expect("product-key selected score backward query")
         .to_f32()
         .expect("copy grad query");
-    assert_eq!(grad_query.len(), tokens * key_dim);
+    assert_close_f32(
+        &grad_query,
+        &[2.2, -0.9, 2.2, 0.1, 0.5, -0.55, -0.45, -0.05],
+        1e-6,
+    );
     let grad_left =
         heirloom_kernels::cuda::memory_product_key_selected_scores_backward_half_keys_f32_i64_buffers(
             &indices,
@@ -1100,7 +1104,7 @@ fn cuda_product_key_half_table_primitives_match_cpu_reference() -> Result<()> {
         .expect("product-key selected score backward left")
         .to_f32()
         .expect("copy grad left");
-    assert_eq!(grad_left.len(), side * (key_dim / 2));
+    assert_close_f32(&grad_left, &[0.75, 1.125, 2.0, 1.0, 0.5, -1.25], 1e-6);
     let grad_right =
         heirloom_kernels::cuda::memory_product_key_selected_scores_backward_half_keys_f32_i64_buffers(
             &indices,
@@ -1112,7 +1116,11 @@ fn cuda_product_key_half_table_primitives_match_cpu_reference() -> Result<()> {
         .expect("product-key selected score backward right")
         .to_f32()
         .expect("copy grad right");
-    assert_eq!(grad_right.len(), side * (key_dim / 2));
+    assert_close_f32(&grad_right, &[-0.25, 0.75, 0.0, 0.0, -0.75, 2.0], 1e-6);
+    let counters = heirloom_kernels::cuda::memory_kernel_counters();
+    assert_eq!(counters.product_key_selected_score_forward_calls, 1);
+    assert_eq!(counters.product_key_backward_query_calls, 1);
+    assert_eq!(counters.product_key_backward_half_key_calls, 2);
     Ok(())
 }
 
@@ -1512,7 +1520,15 @@ fn cuda_memory_transformer_product_key_lookup_runs_on_device() -> Result<()> {
         "counters={counters:?}"
     );
     assert!(
-        counters.selected_key_backward_calls >= 1,
+        counters.product_key_selected_score_forward_calls >= 2,
+        "counters={counters:?}"
+    );
+    assert!(
+        counters.product_key_backward_query_calls >= 1,
+        "counters={counters:?}"
+    );
+    assert!(
+        counters.product_key_backward_half_key_calls >= 2,
         "counters={counters:?}"
     );
     Ok(())

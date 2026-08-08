@@ -166,6 +166,9 @@ static CUDA_MEMORY_LOOKUP_REJECTED_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_MEMORY_QUERY_KEY_SCORE_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_MEMORY_TOPK_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_MEMORY_PRODUCT_KEY_CALLS: AtomicUsize = AtomicUsize::new(0);
+static CUDA_MEMORY_PRODUCT_KEY_SELECTED_SCORE_FORWARD_CALLS: AtomicUsize = AtomicUsize::new(0);
+static CUDA_MEMORY_PRODUCT_KEY_BACKWARD_QUERY_CALLS: AtomicUsize = AtomicUsize::new(0);
+static CUDA_MEMORY_PRODUCT_KEY_BACKWARD_HALF_KEY_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_MEMORY_SOFTMAX_TOPK_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_MEMORY_WEIGHTED_VALUE_FORWARD_CALLS: AtomicUsize = AtomicUsize::new(0);
 static CUDA_MEMORY_WEIGHTED_VALUE_BACKWARD_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -497,6 +500,9 @@ pub struct MemoryKernelCounters {
     pub query_key_score_calls: usize,
     pub topk_calls: usize,
     pub product_key_calls: usize,
+    pub product_key_selected_score_forward_calls: usize,
+    pub product_key_backward_query_calls: usize,
+    pub product_key_backward_half_key_calls: usize,
     pub softmax_topk_calls: usize,
     pub weighted_value_forward_calls: usize,
     pub weighted_value_backward_calls: usize,
@@ -1945,6 +1951,12 @@ pub fn memory_kernel_counters() -> MemoryKernelCounters {
         query_key_score_calls: CUDA_MEMORY_QUERY_KEY_SCORE_CALLS.load(Ordering::Relaxed),
         topk_calls: CUDA_MEMORY_TOPK_CALLS.load(Ordering::Relaxed),
         product_key_calls: CUDA_MEMORY_PRODUCT_KEY_CALLS.load(Ordering::Relaxed),
+        product_key_selected_score_forward_calls:
+            CUDA_MEMORY_PRODUCT_KEY_SELECTED_SCORE_FORWARD_CALLS.load(Ordering::Relaxed),
+        product_key_backward_query_calls: CUDA_MEMORY_PRODUCT_KEY_BACKWARD_QUERY_CALLS
+            .load(Ordering::Relaxed),
+        product_key_backward_half_key_calls: CUDA_MEMORY_PRODUCT_KEY_BACKWARD_HALF_KEY_CALLS
+            .load(Ordering::Relaxed),
         softmax_topk_calls: CUDA_MEMORY_SOFTMAX_TOPK_CALLS.load(Ordering::Relaxed),
         weighted_value_forward_calls: CUDA_MEMORY_WEIGHTED_VALUE_FORWARD_CALLS
             .load(Ordering::Relaxed),
@@ -1969,6 +1981,9 @@ pub fn reset_memory_kernel_counters() {
     CUDA_MEMORY_QUERY_KEY_SCORE_CALLS.store(0, Ordering::Relaxed);
     CUDA_MEMORY_TOPK_CALLS.store(0, Ordering::Relaxed);
     CUDA_MEMORY_PRODUCT_KEY_CALLS.store(0, Ordering::Relaxed);
+    CUDA_MEMORY_PRODUCT_KEY_SELECTED_SCORE_FORWARD_CALLS.store(0, Ordering::Relaxed);
+    CUDA_MEMORY_PRODUCT_KEY_BACKWARD_QUERY_CALLS.store(0, Ordering::Relaxed);
+    CUDA_MEMORY_PRODUCT_KEY_BACKWARD_HALF_KEY_CALLS.store(0, Ordering::Relaxed);
     CUDA_MEMORY_SOFTMAX_TOPK_CALLS.store(0, Ordering::Relaxed);
     CUDA_MEMORY_WEIGHTED_VALUE_FORWARD_CALLS.store(0, Ordering::Relaxed);
     CUDA_MEMORY_WEIGHTED_VALUE_BACKWARD_CALLS.store(0, Ordering::Relaxed);
@@ -2485,6 +2500,7 @@ pub fn memory_product_key_selected_scores_forward_f32_i64_buffers(
         &status,
         "memory_product_key_selected_scores_forward_f32_i64_buffers",
     )?;
+    CUDA_MEMORY_PRODUCT_KEY_SELECTED_SCORE_FORWARD_CALLS.fetch_add(1, Ordering::Relaxed);
     Ok(output)
 }
 
@@ -2572,6 +2588,7 @@ pub fn memory_product_key_selected_scores_backward_query_f32_i64_buffers(
         &status,
         "memory_product_key_selected_scores_backward_query_f32_i64_buffers",
     )?;
+    CUDA_MEMORY_PRODUCT_KEY_BACKWARD_QUERY_CALLS.fetch_add(1, Ordering::Relaxed);
     Ok(output)
 }
 
@@ -2665,6 +2682,7 @@ pub fn memory_product_key_selected_scores_backward_half_keys_f32_i64_buffers(
         &status,
         "memory_product_key_selected_scores_backward_half_keys_f32_i64_buffers",
     )?;
+    CUDA_MEMORY_PRODUCT_KEY_BACKWARD_HALF_KEY_CALLS.fetch_add(1, Ordering::Relaxed);
     Ok(output)
 }
 
