@@ -30,6 +30,11 @@ case "$ACCELERATOR_COUNT" in
 esac
 MACHINE_TYPE="${HEIRLOOM_VERTEX_MACHINE_TYPE:-$DEFAULT_MACHINE_TYPE}"
 
+if [[ "${HEIRLOOM_RUN_NCCL_PROBE:-0}" == "1" ]] && (( ACCELERATOR_COUNT < 2 )); then
+  print -u2 "HEIRLOOM_RUN_NCCL_PROBE=1 requires at least two accelerators; use HEIRLOOM_RUN_NCCL_TESTS=1 for the advertised single-rank NCCL lane."
+  exit 2
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SOURCE_REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD)"
@@ -311,6 +316,7 @@ def main() -> int:
     )
     enable_nccl_debug = os.environ.get("HEIRLOOM_ENABLE_NCCL_DEBUG", "1") == "1"
     run_nccl_probe = os.environ.get("HEIRLOOM_RUN_NCCL_PROBE", "0") == "1"
+    run_nccl_tests = os.environ.get("HEIRLOOM_RUN_NCCL_TESTS", "0") == "1"
     nccl_probe_devices = os.environ.get("HEIRLOOM_NCCL_PROBE_DEVICES", "")
     if nccl_probe_devices == UNSET_SENTINEL:
         nccl_probe_devices = ""
@@ -614,13 +620,22 @@ def main() -> int:
                     upload_gcs(probe_report_path, probe_report_uri)
                     nccl_probe_report_uris.append(probe_report_uri)
 
+        if run_nccl_tests:
+            nccl_test_env = env.copy()
+            if enable_nccl_debug:
+                nccl_test_env.setdefault("NCCL_DEBUG", "INFO")
+                nccl_test_env.setdefault("NCCL_DEBUG_SUBSYS", "INIT,COLL,GRAPH")
+                nccl_test_env.setdefault("HEIRLOOM_NCCL_TRACE", "1")
+            nccl_net_plugin = os.environ.get("HEIRLOOM_NCCL_NET_PLUGIN")
+            if nccl_net_plugin and nccl_net_plugin != "__HEIRLOOM_UNSET__":
+                nccl_test_env["NCCL_NET_PLUGIN"] = nccl_net_plugin
             nccl_test_log = work_root / "nccl-tests.txt"
             try:
                 run_to_file(
                     ["bash", "scripts/test_gpu.sh", "nccl"],
                     nccl_test_log,
                     cwd=source_dir,
-                    env=probe_env,
+                    env=nccl_test_env,
                 )
             finally:
                 uploaded = upload_diagnostic(nccl_test_log, "nccl-tests.txt")
@@ -2103,6 +2118,8 @@ workerPoolSpecs:
       value: "${HEIRLOOM_ENABLE_NCCL_DEBUG:-1}"
     - name: HEIRLOOM_RUN_NCCL_PROBE
       value: "${HEIRLOOM_RUN_NCCL_PROBE:-0}"
+    - name: HEIRLOOM_RUN_NCCL_TESTS
+      value: "${HEIRLOOM_RUN_NCCL_TESTS:-0}"
     - name: HEIRLOOM_NCCL_PROBE_DEVICES
       value: "${HEIRLOOM_NCCL_PROBE_DEVICES:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_NCCL_PROBE_LEN

@@ -1187,6 +1187,24 @@ After a run, document:
 - diagnostic log URIs from `summary.json`, especially `cuda-storage-tests.txt`, fixture `run.log`, and TinyStories `run.log` when a gate fails
 - non-secret pass/fail summary, including CUDA device names and max absolute errors
 
+## 2026-08-08 committee-readiness validation attempt
+
+Vertex job `2925376863247269888` packaged source revision
+`24beb90559601434e904868e7b6a86bdfda74422` and terminated without retry. CUDA
+device discovery, topology, smoke (`add_max_abs_error=0`,
+`relu_max_abs_error=0`), and the BF16 Tensor Core probe
+(`max_abs_error=0`) passed on one A100-SXM4-80GB. The job then failed before
+the classified CUDA suite, microbenchmarks, or software gate because the
+multi-device `gpu nccl-probe` command correctly rejected a one-device list.
+
+The launcher was subsequently split into an explicit single-rank
+`HEIRLOOM_RUN_NCCL_TESTS` lane and a multi-device `HEIRLOOM_RUN_NCCL_PROBE`
+lane. It now rejects a multi-device probe with fewer than two requested
+accelerators before uploading or submitting a job. The failed attempt is not
+current-commit GPU validation evidence; its retained failure summary lives
+under `heirloom/reference-runs/heirloom-validate-quick-20260808-174311/` in the
+private artifact bucket.
+
 ## Boundaries
 
 - GPU/Vertex validation is opt-in only.

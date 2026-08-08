@@ -29,14 +29,16 @@ For a bounded current-commit CUDA/NCCL run with the existing microbenchmarks:
 ```bash
 HEIRLOOM_VERTEX_VALIDATE_MODE=quick \
 HEIRLOOM_VERTEX_ACCELERATOR_COUNT=1 \
-HEIRLOOM_RUN_NCCL_PROBE=1 \
+HEIRLOOM_RUN_NCCL_TESTS=1 \
 HEIRLOOM_RUN_TENSOR_CORE_MICROBENCH=1 \
   zsh scripts/gcp/submit_vertex_heirloom_validate.sh
 ```
 
 This uses one replica and the launcher’s two-hour timeout. With the default
 accelerator it requests one `NVIDIA_A100_80GB` on `a2-ultragpu-1g`. The NCCL
-option runs both the launcher probe and the advertised ignored-test lane.
+option runs the advertised single-rank ignored-test lane. The separate
+`HEIRLOOM_RUN_NCCL_PROBE=1` multi-device launcher probe requires an accelerator
+count of at least two; incompatible settings are rejected before submission.
 
 Specialized `submit_vertex_*.sh` wrappers configure the same launcher for
 historical CUDA, NCCL, tokenizer, memory-transformer, and throughput gates.
