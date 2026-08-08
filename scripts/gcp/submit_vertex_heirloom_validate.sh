@@ -32,7 +32,11 @@ MACHINE_TYPE="${HEIRLOOM_VERTEX_MACHINE_TYPE:-$DEFAULT_MACHINE_TYPE}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PKG_DIR="/tmp/heirloom-vertex-validate-src-${JOB_TS}"
+SOURCE_REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ]]; then
+  print -u2 "Refusing to package a dirty source tree; commit or stash changes first."
+  exit 2
+fi
 JOB_PKG_DIR="/tmp/heirloom-vertex-validate-job-${JOB_TS}"
 SOURCE_TGZ="/tmp/heirloom-source-${JOB_TS}.tar.gz"
 PACKAGE_TGZ="/tmp/heirloom-vertex-validate-${JOB_TS}.tar.gz"
@@ -43,7 +47,7 @@ PACKAGE_URI="${BUCKET}/heirloom/packages/heirloom-vertex-validate-${JOB_TS}.tar.
 ARTIFACT_PREFIX="${BUCKET}/heirloom/reference-runs/${DISPLAY_NAME}"
 
 cleanup() {
-  rm -rf "$PKG_DIR" "$JOB_PKG_DIR"
+  rm -rf "$JOB_PKG_DIR"
   rm -f "$SOURCE_TGZ" "$PACKAGE_TGZ" "$CONFIG_YAML"
 }
 trap cleanup EXIT
@@ -70,17 +74,11 @@ retry_cloud_command() {
   done
 }
 
-print "Packaging Heirloom source from ${REPO_ROOT}"
-mkdir -p "$PKG_DIR"
-tar -C "$REPO_ROOT" \
-  --exclude "./target" \
-  --exclude "./.git" \
-  --exclude "./.venv" \
-  --exclude "./.venv-parity" \
-  --exclude "./runs" \
-  --exclude "./tmp" \
-  --exclude "./.DS_Store" \
-  -czf "$SOURCE_TGZ" .
+print "Packaging Heirloom source revision ${SOURCE_REVISION} from ${REPO_ROOT}"
+git -C "$REPO_ROOT" archive \
+  --format=tar.gz \
+  --output="$SOURCE_TGZ" \
+  "$SOURCE_REVISION"
 
 mkdir -p "$JOB_PKG_DIR/heirloom_vertex_validate_job"
 touch "$JOB_PKG_DIR/heirloom_vertex_validate_job/__init__.py"
@@ -258,6 +256,7 @@ def ensure_rust_toolchain(env: dict[str, str]) -> None:
 
 def main() -> int:
     source_uri = os.environ["HEIRLOOM_SOURCE_URI"]
+    source_revision = os.environ["HEIRLOOM_SOURCE_REVISION"]
     validate_mode = os.environ.get("HEIRLOOM_VALIDATE_MODE", "quick")
     require_gpu = os.environ.get("HEIRLOOM_REQUIRE_GPU", "1") == "1"
     artifact_prefix = os.environ["HEIRLOOM_ARTIFACT_PREFIX"]
@@ -374,6 +373,7 @@ def main() -> int:
     tensor_core_microbench_sections_failed: list[str] = []
     nccl_probe_report_uris: list[str] = []
     nccl_probe_log_uris: list[str] = []
+    nccl_test_log_uris: list[str] = []
     diagnostic_log_uris: list[str] = []
     cuda_train_lm_fixture_report_uris: list[str] = []
     cuda_train_lm_fixture_pad_crop_report_uris: list[str] = []
@@ -613,6 +613,19 @@ def main() -> int:
                     probe_report_uri = f"{artifact_prefix}/nccl-probe.json"
                     upload_gcs(probe_report_path, probe_report_uri)
                     nccl_probe_report_uris.append(probe_report_uri)
+
+            nccl_test_log = work_root / "nccl-tests.txt"
+            try:
+                run_to_file(
+                    ["bash", "scripts/test_gpu.sh", "nccl"],
+                    nccl_test_log,
+                    cwd=source_dir,
+                    env=probe_env,
+                )
+            finally:
+                uploaded = upload_diagnostic(nccl_test_log, "nccl-tests.txt")
+                if uploaded:
+                    nccl_test_log_uris.append(uploaded)
 
         if run_cuda_storage_tests:
             cuda_test_log = work_root / "cuda-storage-tests.txt"
@@ -1868,6 +1881,7 @@ def main() -> int:
     summary = {
         "mode": validate_mode,
         "status": "passed",
+        "source_revision": source_revision,
         "source_uri": source_uri,
         "artifact_prefix": artifact_prefix,
         "quick_clippy": quick_clippy_status,
@@ -1884,6 +1898,7 @@ def main() -> int:
         "tensor_core_microbench_sections_failed": tensor_core_microbench_sections_failed,
         "nccl_probe_report_uris": nccl_probe_report_uris,
         "nccl_probe_log_uris": nccl_probe_log_uris,
+        "nccl_test_log_uris": nccl_test_log_uris,
         "diagnostic_log_uris": diagnostic_log_uris,
         "cuda_train_lm_fixture_report_uris": cuda_train_lm_fixture_report_uris,
         "cuda_train_lm_fixture_pad_crop_report_uris": cuda_train_lm_fixture_pad_crop_report_uris,
@@ -1928,6 +1943,7 @@ if __name__ == "__main__":
                     {
                         "mode": os.environ.get("HEIRLOOM_VALIDATE_MODE", "quick"),
                         "status": "failed",
+                        "source_revision": os.environ.get("HEIRLOOM_SOURCE_REVISION"),
                         "source_uri": os.environ.get("HEIRLOOM_SOURCE_URI"),
                         "artifact_prefix": artifact_prefix,
                         "error_type": type(err).__name__,
@@ -1999,6 +2015,8 @@ workerPoolSpecs:
       value: "${CARGO_INCREMENTAL:-__HEIRLOOM_UNSET__}"
     - name: HEIRLOOM_SOURCE_URI
       value: "${SOURCE_URI}"
+    - name: HEIRLOOM_SOURCE_REVISION
+      value: "${SOURCE_REVISION}"
     - name: HEIRLOOM_VALIDATE_MODE
       value: "${VALIDATE_MODE}"
     - name: HEIRLOOM_RUN_LEARNING_SANITY_FIXTURES

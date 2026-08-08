@@ -22,6 +22,22 @@ HEIRLOOM_VERTEX_VALIDATE_MODE=quick \
   zsh scripts/gcp/submit_vertex_heirloom_validate.sh
 ```
 
+The launcher refuses a dirty worktree, packages the exact `HEAD` tree with
+`git archive`, and records that revision in both success and failure summaries.
+For a bounded current-commit CUDA/NCCL run with the existing microbenchmarks:
+
+```bash
+HEIRLOOM_VERTEX_VALIDATE_MODE=quick \
+HEIRLOOM_VERTEX_ACCELERATOR_COUNT=1 \
+HEIRLOOM_RUN_NCCL_PROBE=1 \
+HEIRLOOM_RUN_TENSOR_CORE_MICROBENCH=1 \
+  zsh scripts/gcp/submit_vertex_heirloom_validate.sh
+```
+
+This uses one replica and the launcher’s two-hour timeout. With the default
+accelerator it requests one `NVIDIA_A100_80GB` on `a2-ultragpu-1g`. The NCCL
+option runs both the launcher probe and the advertised ignored-test lane.
+
 Specialized `submit_vertex_*.sh` wrappers configure the same launcher for
 historical CUDA, NCCL, tokenizer, memory-transformer, and throughput gates.
 They intentionally retain their research-sized defaults, so inspect the
