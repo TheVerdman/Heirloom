@@ -2,7 +2,7 @@
 
 `heirloom-skill` treats `SKILL.md` as procedural source code. A skill is parsed into typed `SkillIr`, linted, compiled into a deterministic `.hskill` object file, routed at runtime, sliced into compact context, checked against symbolic tool policy, validated, logged as JSONL traces, and exported into SFT-style records.
 
-This is not better prompting. It is a Rust-native compiler and training-data pipeline for turning scattered human-written agent procedures into durable, testable, reusable procedural competence inside Heirloom.
+This is an experimental Rust-native compiler and training-data pipeline for reusable human-written agent procedures. Durable learned procedural competence is a research objective; compilation, routing, and SFT export alone do not demonstrate that a model learned or retained a skill. See the [evidence scope](../docs/known-limitations.md#evidence-scope).
 
 ## Quickstart
 
